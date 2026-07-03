@@ -13,13 +13,13 @@ import asyncio
 import logging
 import time
 
-import httpx
 from sqlalchemy import text
 
 from config import Settings
 from database.engine import get_engine
 from database.redis_client import get_redis
 from models.schemas.health import ComponentStatus, HealthReport, Status
+from modules.solana import get_rpc_client
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +72,6 @@ class HealthService:
         await get_redis(self._settings).ping()
 
     async def _check_solana_rpc(self) -> None:
-        """JSON-RPC getHealth against the configured Solana endpoint."""
-        async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S) as client:
-            res = await client.post(
-                self._settings.rpc_url,
-                json={"jsonrpc": "2.0", "id": 1, "method": "getHealth"},
-            )
-            res.raise_for_status()
+        """getHealth through the shared modules.solana client (single RPC path)."""
+        if not await get_rpc_client(self._settings).get_health():
+            raise RuntimeError("node reports unhealthy")

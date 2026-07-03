@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import Settings, get_settings
 from database.engine import get_session_factory
 from database.redis_client import get_redis
+from modules.solana import RpcClient, get_rpc_client
 from services.health import HealthService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -40,6 +41,12 @@ def get_health_service(settings: SettingsDep) -> HealthService:
     return HealthService(settings)
 
 
+def get_solana_client(settings: SettingsDep) -> RpcClient:
+    """Provide the shared Solana RPC client (read-only chain access)."""
+    return get_rpc_client(settings)
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
+SolanaClientDep = Annotated[RpcClient, Depends(get_solana_client)]

@@ -14,7 +14,7 @@ verifiably done.
 
 ## Phase 1 — Data spine
 
-- [ ] `modules/solana`: async RPC client (ends the 4x rpc() duplication)
+- [x] `modules/solana`: async RPC client (ends the 4x rpc() duplication) — done 2026-07-03
 - [ ] `modules/market`: source clients behind one `PriceSource` protocol
 - [ ] Alembic migrations; initial revision from `models/orm`
 - [ ] SQLite → PostgreSQL importer for the existing `market.db` history

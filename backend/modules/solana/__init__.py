@@ -1,14 +1,22 @@
 """Solana module — READ-ONLY chain access.
 
-Scope guard (foundation phase): no wallets, no signing, no transactions.
-This module is the single place JSON-RPC calls will live, ending the
-current 4x duplication of the rpc() helper in the Node layer.
+Scope guard: no wallets, no signing, no transactions — those never enter
+this module. `RpcClient` is the single place JSON-RPC lives, replacing the
+4x duplicated rpc() helper documented in docs/IMPLEMENTATION_NOTES.md.
 
-TODO(solana): async RpcClient (httpx) — getHealth, getSlot, getEpochInfo,
-              getRecentPerformanceSamples, getAccountInfo, getTokenSupply,
-              getTokenLargestAccounts (port from 09 Automation/market/sources/rpc.mjs
-              and risk-engine.mjs).
-TODO(solana): typed response models in models/schemas (EpochInfo, ChainStatus).
-TODO(solana): retry policy + endpoint failover (public -> Helius).
-TODO(solana): unit tests with mocked transport.
+Public surface:
+    from modules.solana import RpcClient, SolanaRpcError
+
+Done: async client, typed responses, retry + endpoint failover, unit tests.
+TODO(solana): rate-limit awareness (respect Retry-After on 429).
+TODO(solana): websocket subscriptions for slot/account watch (Phase 2+).
 """
+
+from modules.solana.client import (
+    RpcClient,
+    SolanaRpcError,
+    close_rpc_client,
+    get_rpc_client,
+)
+
+__all__ = ["RpcClient", "SolanaRpcError", "close_rpc_client", "get_rpc_client"]

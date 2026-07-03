@@ -17,6 +17,7 @@ from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from database.engine import dispose_engine
 from database.redis_client import close_redis
+from modules.solana import close_rpc_client
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     await dispose_engine()
     await close_redis()
+    await close_rpc_client()
     logger.info("%s stopped cleanly", settings.app_name)
 
 
