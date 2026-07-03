@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "SOL",
+    "coingeckoId": "solana",
+    "mint": "So11111111111111111111111111111111111111112"
+  },
+  {
+    "symbol": "JUP",
+    "coingeckoId": "jupiter-exchange-solana",
+    "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+  },
+  {
+    "symbol": "BONK",
+    "coingeckoId": "bonk",
+    "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+  },
+  {
+    "symbol": "WIF",
+    "coingeckoId": "dogwifcoin",
+    "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"
+  }
+]

@@ -1,0 +1,9 @@
+# Never bake these into the image.
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.gitignore
+docs/
+tests/
