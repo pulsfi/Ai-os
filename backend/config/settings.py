@@ -54,6 +54,20 @@ class Settings(BaseSettings):
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
 
+    # --- market intelligence (READ-ONLY market data) ---
+    birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
+    market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token
+    market_refresh_enabled: bool = False  # background scheduler on/off
+    market_refresh_seconds: int = 300  # scheduler interval
+    market_provider_min_interval_seconds: float = 1.0  # per-provider rate guard
+    # Tracked token mints (SOL, JUP, BONK, WIF by default). Env: JSON list.
+    market_watchlist: list[str] = [
+        "So11111111111111111111111111111111111111112",
+        "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+        "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    ]
+
     # --- obsidian vault bridge (the knowledge layer) ---
     vault_path: Path = Path("..")
 

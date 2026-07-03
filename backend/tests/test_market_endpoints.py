@@ -1,0 +1,98 @@
+"""/api/v1/market endpoints with a faked manager — no network, no DB."""
+
+from datetime import datetime, timezone
+
+from fastapi.testclient import TestClient
+
+from config import Settings
+from core.application import create_app
+from core.dependencies import get_market
+from core.exceptions import ExternalServiceError
+from modules.market.market_models import (
+    HistoryPoint,
+    MarketStatus,
+    TokenInfo,
+    TokenMarketData,
+)
+
+NOW = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)
+
+
+def token_data(mint: str, change: float) -> TokenMarketData:
+    return TokenMarketData(
+        mint=mint,
+        symbol="TOK",
+        price_usd=1.0,
+        change_24h=change,
+        volume_24h=1e6,
+        liquidity_usd=2e5,
+        market_cap=9e6,
+        fdv=1e7,
+        sources=["dexscreener", "coingecko"],
+        divergence_pct=0.5,
+        fetched_at=NOW,
+    )
+
+
+class FakeManager:
+    """Stands in for MarketManager behind the DI seam."""
+
+    async def get_watchlist(self):
+        return [token_data("MintA", 1.0), token_data("MintB", 9.0)]
+
+    async def get_trending(self):
+        return [token_data("MintB", 9.0), token_data("MintA", 1.0)]
+
+    async def get_token_info(self, mint: str):
+        return TokenInfo(market=token_data(mint, 1.0), decimals=9, supply_ui=1e9)
+
+    async def get_history(self, mint: str, limit: int = 100):
+        if mint == "dbdown":
+            raise ExternalServiceError("history unavailable: database unreachable")
+        return [HistoryPoint(ts=NOW, price_usd=1.0, change_24h=1.0, volume_24h=1e6,
+                             liquidity_usd=2e5, market_cap=9e6, fdv=1e7, sources="dexscreener")]
+
+    def status(self):
+        return MarketStatus(
+            providers=[], cache_backend="memory", cache_hits=3, cache_misses=1,
+            scheduler_enabled=False, scheduler_interval_s=300, scheduler_runs=0,
+            last_refresh=None, tracked_tokens=2,
+        )
+
+
+def make_client(settings: Settings) -> TestClient:
+    app = create_app(settings)
+    app.dependency_overrides[get_market] = FakeManager
+    return TestClient(app)
+
+
+def test_tokens_endpoint(settings: Settings) -> None:
+    res = make_client(settings).get("/api/v1/market/tokens")
+    assert res.status_code == 200 and len(res.json()) == 2
+
+
+def test_trending_orders_by_change(settings: Settings) -> None:
+    body = make_client(settings).get("/api/v1/market/trending").json()
+    assert [t["mint"] for t in body] == ["MintB", "MintA"]
+
+
+def test_token_detail_includes_metadata(settings: Settings) -> None:
+    body = make_client(settings).get("/api/v1/market/token/MintA").json()
+    assert body["market"]["mint"] == "MintA" and body["decimals"] == 9
+
+
+def test_history_endpoint(settings: Settings) -> None:
+    body = make_client(settings).get("/api/v1/market/history/MintA").json()
+    assert len(body) == 1 and body[0]["price_usd"] == 1.0
+
+
+def test_history_db_down_maps_to_error_envelope(settings: Settings) -> None:
+    """DB failure surfaces as the standard 502 envelope, not a raw 500."""
+    res = make_client(settings).get("/api/v1/market/history/dbdown")
+    assert res.status_code == 502
+    assert res.json()["error"]["code"] == "external_service_error"
+
+
+def test_status_endpoint(settings: Settings) -> None:
+    body = make_client(settings).get("/api/v1/market/status").json()
+    assert body["cache_hits"] == 3 and body["tracked_tokens"] == 2

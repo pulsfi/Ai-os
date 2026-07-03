@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import Settings, get_settings
 from database.engine import get_session_factory
 from database.redis_client import get_redis
+from modules.market import MarketManager, get_market_manager
 from modules.solana import RpcClient, get_rpc_client
 from services.health import HealthService
 
@@ -46,7 +47,13 @@ def get_solana_client(settings: SettingsDep) -> RpcClient:
     return get_rpc_client(settings)
 
 
+def get_market(settings: SettingsDep) -> MarketManager:
+    """Provide the shared Market Intelligence manager (read-only data)."""
+    return get_market_manager(settings)
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
 SolanaClientDep = Annotated[RpcClient, Depends(get_solana_client)]
+MarketManagerDep = Annotated[MarketManager, Depends(get_market)]

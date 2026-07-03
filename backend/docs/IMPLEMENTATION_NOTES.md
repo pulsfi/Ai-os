@@ -1,6 +1,11 @@
 # Implementation Notes
 
 State of the codebase after the foundation delivery (2026-07-03).
+Updated same day: `modules/solana` + `modules/market` (Market Intelligence)
+delivered — see `docs/MARKET_MODULE.md`. Two defects found only by LIVE
+verification, now regression-tested: (1) provider rate guard must delay,
+not skip (skip silently dropped 3 of 4 watchlist tokens); (2) DexScreener
+exotic-quote pairs report garbage prices (major-quote filter).
 
 ## Implemented
 

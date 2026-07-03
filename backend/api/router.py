@@ -6,13 +6,13 @@ include it here. Nothing else changes (Open/Closed principle).
 
 from fastapi import APIRouter
 
-from api.v1 import health, solana, system
+from api.v1 import health, market, solana, system
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(solana.router, prefix="/solana", tags=["solana"])
+api_router.include_router(market.router, prefix="/market", tags=["market"])
 
-# TODO(api): /market endpoints once modules/market lands (snapshots, watchlist)
 # TODO(api): /vault endpoints once services/vault lands (notes bridge)
 # TODO(api): /agents endpoints for agent status & reports (read-only first)

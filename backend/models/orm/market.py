@@ -9,18 +9,41 @@ TODO(migration): add Alembic and generate the initial revision from these.
 
 from datetime import datetime
 
-from sqlalchemy import Float, Index, String, Text
+from sqlalchemy import Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
 
 
+class Token(Base):
+    """One tracked token — normalized identity, referenced by snapshots.
+
+    Keeping identity separate from observations avoids duplicating
+    symbol/decimals on every snapshot row (the normalization requirement).
+    """
+
+    __tablename__ = "tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    symbol: Mapped[str | None] = mapped_column(String(32))
+    name: Mapped[str | None] = mapped_column(String(128))
+    decimals: Mapped[int | None] = mapped_column(Integer)
+    first_seen: Mapped[datetime] = mapped_column()
+
+
 class MarketSnapshot(Base):
-    """One multi-source market observation of one token at one moment."""
+    """One multi-source market observation of one token at one moment.
+
+    (token_id, ts) is unique — the same instant is never stored twice,
+    which is how the 'avoid duplicate data' requirement is enforced at
+    the schema level rather than by application discipline.
+    """
 
     __tablename__ = "market_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    token_id: Mapped[int | None] = mapped_column(ForeignKey("tokens.id"), index=True)
     ts: Mapped[datetime] = mapped_column(index=True)
     symbol: Mapped[str] = mapped_column(String(32))
     mint: Mapped[str | None] = mapped_column(String(64))
@@ -29,9 +52,13 @@ class MarketSnapshot(Base):
     volume_24h: Mapped[float | None] = mapped_column(Float)
     liquidity: Mapped[float | None] = mapped_column(Float)
     market_cap: Mapped[float | None] = mapped_column(Float)
+    fdv: Mapped[float | None] = mapped_column(Float)
     sources: Mapped[str | None] = mapped_column(String(128))  # e.g. "coingecko+dexscreener"
 
-    __table_args__ = (Index("ix_market_snapshots_symbol_ts", "symbol", "ts"),)
+    __table_args__ = (
+        Index("ix_market_snapshots_symbol_ts", "symbol", "ts"),
+        UniqueConstraint("token_id", "ts", name="uq_snapshot_token_ts"),
+    )
 
 
 class PaperTrade(Base):

@@ -15,10 +15,13 @@ verifiably done.
 ## Phase 1 — Data spine
 
 - [x] `modules/solana`: async RPC client (ends the 4x rpc() duplication) — done 2026-07-03
-- [ ] `modules/market`: source clients behind one `PriceSource` protocol
+- [x] `modules/market`: Market Intelligence — 5 providers behind one
+      `MarketProvider` interface, merge + divergence validation, Redis/mem
+      cache, normalized tables, scheduler — done 2026-07-03 (docs/MARKET_MODULE.md)
+- [x] SQL migrations + runner (`scripts/migrate.py`) — Alembic still queued below
+- [x] `/api/v1/market` read endpoints (tokens, trending, token, history, status)
 - [ ] Alembic migrations; initial revision from `models/orm`
 - [ ] SQLite → PostgreSQL importer for the existing `market.db` history
-- [ ] `/api/v1/market` read endpoints (snapshots, watchlist)
 
 ## Phase 2 — Collection & vault bridge
 

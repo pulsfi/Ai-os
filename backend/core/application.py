@@ -17,6 +17,8 @@ from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from database.engine import dispose_engine
 from database.redis_client import close_redis
+from modules.market import close_market_manager, get_market_manager
+from modules.market.market_scheduler import MarketScheduler
 from modules.solana import close_rpc_client
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.environment.value,
         settings.debug,
     )
+    scheduler: MarketScheduler | None = None
+    if settings.market_refresh_enabled:
+        scheduler = MarketScheduler(
+            get_market_manager(settings), settings.market_refresh_seconds
+        )
+        scheduler.start()
     yield
+    if scheduler is not None:
+        await scheduler.stop()
+    await close_market_manager()
     await dispose_engine()
     await close_redis()
     await close_rpc_client()

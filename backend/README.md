@@ -53,9 +53,17 @@ pytest                            # run the test suite
 The app boots **without** PostgreSQL/Redis (components report `down` in
 `/api/v1/health`); start them with `docker compose up -d db redis`.
 
+## Modules
+
+- `modules/solana` — read-only async RPC client (retry, failover, typed)
+- `modules/market` — Market Intelligence: 5-provider market data with merge
+  + divergence validation, caching, history, scheduler → `/api/v1/market/*`
+  (see `docs/MARKET_MODULE.md`)
+
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — every architectural decision, explained
+- `docs/MARKET_MODULE.md` — Market Intelligence: diagrams, API, decisions
 - `docs/ROADMAP.md` — phased plan to full system
 - `docs/IMPLEMENTATION_NOTES.md` — what exists, TODOs, duplication report
 - `docs/DEVELOPER_GUIDE.md` — conventions, how to add a module

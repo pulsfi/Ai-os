@@ -16,8 +16,10 @@ FastAPI · PostgreSQL (async SQLAlchemy) · Redis · Pydantic v2 · Docker · py
 ## Status (2026-07-03)
 
 - ✅ Foundation delivered: config loader, logging, error envelope, health endpoint, async DB/Redis, API skeleton, Docker stack
-- ✅ 9/9 unit tests passing; live smoke test green (API up, Solana RPC probe ok, infra optional)
-- 📚 Docs: `backend/docs/` — ARCHITECTURE, ROADMAP, IMPLEMENTATION_NOTES, DEVELOPER_GUIDE
+- ✅ `modules/solana` — read-only async RPC client (retry + failover) with `/api/v1/solana/*` endpoints
+- ✅ **Market Intelligence module** — 5 providers behind one interface, merge + divergence validation, Redis/mem cache, normalized Postgres tables + migrations, async scheduler, `/api/v1/market/*` (tokens · trending · token · history · status). Read-only; feeds the [[Research Agent]], [[Risk Agent]], [[Strategy Agent]], [[Monitoring Agent]], [[Learning Agent]]
+- ✅ 33/33 unit tests passing; all endpoints live-verified against mainnet
+- 📚 Docs: `backend/docs/` — ARCHITECTURE, MARKET_MODULE, ROADMAP, IMPLEMENTATION_NOTES, DEVELOPER_GUIDE
 
 ## Migration plan
 

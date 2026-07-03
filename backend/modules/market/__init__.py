@@ -1,16 +1,29 @@
-"""Market module — data collection, storage, and analysis.
+"""Market Intelligence module — READ-ONLY market data collection.
 
-Python home for what `09 Automation/market/` (Node) does today. The Node
-layer keeps running in production until each piece is ported and verified;
-nothing is deleted during the migration.
+Never buys, sells, signs, or holds keys. Its sole job: collect, validate,
+store, and expose live market data for the API and the agents
+(Research, Risk, Strategy, Monitoring, Learning).
 
-TODO(market): source clients (coingecko, dexscreener, geckoterminal,
-              jupiter, birdeye) behind one `PriceSource` protocol —
-              removes the per-script duplication in the Node layer.
-TODO(market): SnapshotService writing models.orm.MarketSnapshot to Postgres.
-TODO(market): importer for the existing SQLite history (market.db).
-TODO(market): cross-source divergence check (>2% disagreement flags), as
-              proven necessary by the live JUP/JTO incident on 2026-07-02.
-TODO(market): scheduled collection via a worker (arq/APScheduler decision
-              pending — see docs/ROADMAP.md phase 2).
+Layout (all internal — consumers import from this package root):
+    market_manager     composition point & facade  <- start here
+    market_service     provider fan-out + merge + divergence validation
+    providers/         one isolated adapter per source (swap point)
+    market_cache       Redis w/ memory fallback (rate-limit shield)
+    market_repository  tokens + snapshot history (PostgreSQL)
+    market_scheduler   configurable async refresh loop
+    price_service / token_service / liquidity_service / volume_service
+                       narrow agent-facing facades (ISP)
+
+Done: 5 provider adapters, merge+divergence, cache, repo, scheduler,
+      REST endpoints, monitoring, tests.
+TODO(market): chain-wide trending via a discovery provider.
+TODO(market): importer for the legacy Node SQLite history (market.db).
 """
+
+from modules.market.market_manager import (
+    MarketManager,
+    close_market_manager,
+    get_market_manager,
+)
+
+__all__ = ["MarketManager", "close_market_manager", "get_market_manager"]
