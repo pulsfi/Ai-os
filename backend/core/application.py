@@ -18,6 +18,7 @@ from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from database.engine import dispose_engine
 from database.redis_client import close_redis
+from modules.bots import close_bot_manager, get_bot_manager
 from modules.chat import close_chat_service
 from modules.market import close_market_manager, get_market_manager
 from modules.market.pumpfun import close_pumpfun_client
@@ -44,9 +45,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             get_market_manager(settings), settings.market_refresh_seconds
         )
         scheduler.start()
+    if settings.bots_enabled and settings.bots_autostart:
+        # Paper-mode fleet trades continuously from boot (virtual USD only).
+        get_bot_manager(settings).start_all()
     yield
     if scheduler is not None:
         await scheduler.stop()
+    await close_bot_manager()
     await close_market_manager()
     await close_pumpfun_client()
     await close_chat_service()

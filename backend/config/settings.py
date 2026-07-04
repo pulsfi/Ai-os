@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     # --- paper trading ledger (read-only; written by the Node scalper) ---
     paper_db_path: str = "09 Automation/market/market.db"  # relative to vault_path
 
+    # --- bot fleet (PAPER MODE ONLY — virtual USD, no wallets, no keys) ---
+    bots_enabled: bool = True  # build the fleet + expose /bots
+    bots_autostart: bool = False  # start every bot loop at app boot
+    bots_interval_seconds: float = 20.0  # tick cadence per bot
+    bots_usd_per_trade: float = 50.0  # virtual position size
+    bots_db_path: str = "data/paper_bots.db"  # bot ledger, relative to backend/
+
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
     market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token

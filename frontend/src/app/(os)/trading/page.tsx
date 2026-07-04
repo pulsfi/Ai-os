@@ -2,6 +2,7 @@ import { LineChart } from "lucide-react";
 
 import { WatchlistCard } from "@/components/dashboard/watchlist-card";
 import { FadeIn } from "@/components/motion/fade-in";
+import { BotFleetCard } from "@/components/trading/bot-fleet-card";
 import { PaperLedgerCard } from "@/components/trading/paper-ledger-card";
 import { PumpFunCard } from "@/components/trading/pumpfun-card";
 import { TokenInspector } from "@/components/trading/token-inspector";
@@ -31,18 +32,21 @@ export default function TradingPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <FadeIn className="lg:col-span-2">
+          <BotFleetCard />
+        </FadeIn>
+        <FadeIn delay={0.05} className="lg:col-span-2">
           <PaperLedgerCard />
         </FadeIn>
-        <FadeIn delay={0.05}>
+        <FadeIn delay={0.1}>
           <PumpFunCard />
         </FadeIn>
-        <FadeIn delay={0.1}>
+        <FadeIn delay={0.15}>
           <TrendingCard />
         </FadeIn>
-        <FadeIn delay={0.15} className="lg:col-span-2">
+        <FadeIn delay={0.2} className="lg:col-span-2">
           <WatchlistCard />
         </FadeIn>
-        <FadeIn delay={0.2} className="lg:col-span-2">
+        <FadeIn delay={0.25} className="lg:col-span-2">
           <TokenInspector />
         </FadeIn>
       </div>

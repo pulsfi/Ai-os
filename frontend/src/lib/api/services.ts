@@ -13,6 +13,9 @@ import {
   chatStatusSchema,
   healthReportSchema,
   historyPointSchema,
+  botControlResultSchema,
+  botStatusSchema,
+  botTradeSchema,
   marketStatusSchema,
   paperSummarySchema,
   paperTradeSchema,
@@ -29,6 +32,9 @@ import {
   type ChatStatus,
   type HealthReport,
   type HistoryPoint,
+  type BotControlResult,
+  type BotStatus,
+  type BotTrade,
   type MarketStatus,
   type PaperSummary,
   type PaperTrade,
@@ -106,6 +112,30 @@ export const tradingService = {
   /** GET /trading/trades — paper trade log, newest first. */
   getTrades: (limit = 50): Promise<PaperTrade[]> =>
     getValidated(`/trading/trades?limit=${limit}`, z.array(paperTradeSchema)),
+};
+
+export const botsService = {
+  /** GET /bots — the fleet: config, live state, ledger stats per bot. */
+  list: (): Promise<BotStatus[]> => getValidated("/bots", z.array(botStatusSchema)),
+
+  /** GET /bots/trades — fleet-wide paper trade log, newest first. */
+  allTrades: (limit = 50): Promise<BotTrade[]> =>
+    getValidated(`/bots/trades?limit=${limit}`, z.array(botTradeSchema)),
+
+  /** GET /bots/{id}/trades — one bot's paper trade log. */
+  trades: (botId: string, limit = 50): Promise<BotTrade[]> =>
+    getValidated(
+      `/bots/${encodeURIComponent(botId)}/trades?limit=${limit}`,
+      z.array(botTradeSchema),
+    ),
+
+  /** POST /bots/{id}/{action} — REAL start/stop/restart of the bot loop. */
+  control: (botId: string, action: "start" | "stop" | "restart"): Promise<BotControlResult> =>
+    postValidated(
+      `/bots/${encodeURIComponent(botId)}/${action}`,
+      undefined,
+      botControlResultSchema,
+    ),
 };
 
 export const chatService = {

@@ -19,6 +19,7 @@ from config import Settings, get_settings
 from database.engine import get_session_factory
 from database.redis_client import get_redis
 from modules.agents import AgentsService, get_agents_service
+from modules.bots import BotManager, get_bot_manager
 from modules.chat import ChatService, get_chat_service
 from modules.market import MarketManager, get_market_manager
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
@@ -76,6 +77,11 @@ def get_paper_trading(settings: SettingsDep) -> PaperTradingService:
     return get_paper_trading_service(settings)
 
 
+def get_bots(settings: SettingsDep) -> BotManager:
+    """Provide the bot fleet manager (paper-mode runtime)."""
+    return get_bot_manager(settings)
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
@@ -85,3 +91,4 @@ ChatServiceDep = Annotated[ChatService, Depends(get_chat)]
 AgentsServiceDep = Annotated[AgentsService, Depends(get_agents)]
 PumpFunDep = Annotated[PumpFunClient, Depends(get_pumpfun)]
 PaperTradingDep = Annotated[PaperTradingService, Depends(get_paper_trading)]
+BotManagerDep = Annotated[BotManager, Depends(get_bots)]

@@ -19,3 +19,7 @@ __pycache__/
 # --- os ---
 Thumbs.db
 desktop.ini
+
+# Bot fleet paper ledger (runtime data)
+backend/data/
+

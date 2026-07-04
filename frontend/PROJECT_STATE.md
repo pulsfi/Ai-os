@@ -182,11 +182,53 @@ capabilities were built to support this (no fakes, per project rule):
   50% win rate, 14 snapshots); Trading page renders all cards.
 - tsc + eslint clean; `next build` passes.
 
-## ⏭️ Next — Milestone 5
+## ✅ Milestone 5 — Multi-bot paper-trading runtime (done 2026-07-04)
 
-- Backend /vault endpoints (Memory page's remaining section, notes bridge).
+The "multi bot, all the time" milestone: three strategy bots run as real
+asyncio loops inside the backend, trading virtual USD against live data,
+with REAL start/stop/restart from the UI. PAPER MODE ONLY — no wallets,
+no keys, no signing anywhere in the module tree (Stage 5 gate intact).
+
+### Backend (`modules/bots/`)
+
+- **`ledger.py`** — dedicated SQLite ledger (`backend/data/paper_bots.db`,
+  WAL), single writer = this process. Open/close trades, per-bot stats.
+- **`strategies.py`** — three styles sharing one interface:
+  `sniper` (new pump.fun launches with early traction), `graduate`
+  (bonding-curve graduation momentum ≥85%), `trend` (watchlist 24h movers
+  on real merged prices — the baseline bot). Pump prices derived
+  mcap/1B supply, stated in every entry note.
+- **`runner.py`** — per-bot loop: mark-to-market → take-profit/stop-loss/
+  max-hold exits → new entries. Every tick error-contained; a failing
+  provider costs one tick, never the loop.
+- **`manager.py`** — fleet registry, real start/stop/restart, honest
+  `BotControlResult`. Lifespan autostart via `BOTS_AUTOSTART=true`
+  (set in backend/.env), clean shutdown on exit.
+- Endpoints: `GET /bots`, `GET /bots/trades`, `GET /bots/{id}/trades`,
+  `POST /bots/{id}/{start|stop|restart}` (REAL, unlike /agents).
+- Tests: 65/65 (10 new: ledger math/isolation, sniper filters, runner
+  TP/SL/lifecycle/error-survival, endpoint contracts).
+
+### Frontend
+
+- **BotFleetCard** leads the Trading page: per-bot cards (state with
+  pulse, open/closed, realized PnL, win rate, ticks/errors), real
+  Start/Stop/Restart buttons, and a Trades drawer showing the live
+  ledger with entry/exit notes.
+
+### Verified live
+
+- Boot → all three bots `running`; within one tick the fleet held BONK
+  (trending +4.82%, 3 providers) and three graduating pump.fun coins.
+- `POST /bots/sniper/stop` → `accepted:true, state:stopped`; start →
+  running again. tsc + eslint clean; `next build` passes; Trading page
+  renders the fleet.
+
+## ⏭️ Next — Milestone 6
+
+- Let the fleet run and review the paper track record (win rate per
+  strategy) — this is the evidence the Stage 5 gate needs.
+- Backend /vault endpoints (Memory page's remaining section).
 - WebSocket layer for live updates (replaces polling).
-- Wire pump.fun discovery into the agents' research pipeline; optional
-  pumpfun history persistence alongside market snapshots.
 - Photon integration: pending the user's API keys — no public API exists,
   so nothing is stubbed.

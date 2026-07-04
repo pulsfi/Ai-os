@@ -243,3 +243,65 @@ export const paperSummarySchema = z.object({
 });
 
 export type PaperSummary = z.infer<typeof paperSummarySchema>;
+
+// --- bot fleet (paper-mode runtime with REAL controls) -----------------------
+
+export const botStateSchema = z.enum(["stopped", "running", "error"]);
+
+export const botConfigSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  strategy: z.string(),
+  description: z.string(),
+  interval_s: z.number(),
+  usd_per_trade: z.number(),
+  max_open_positions: z.number(),
+  take_profit_pct: z.number(),
+  stop_loss_pct: z.number(),
+  max_hold_s: z.number(),
+});
+
+export const botStatusSchema = z.object({
+  config: botConfigSchema,
+  state: botStateSchema,
+  started_at: z.string().nullable(),
+  ticks: z.number(),
+  errors: z.number(),
+  last_error: z.string().nullable(),
+  open_positions: z.number(),
+  closed_trades: z.number(),
+  realized_pnl_usd: z.number(),
+  win_rate_pct: z.number().nullable(),
+});
+
+export type BotStatus = z.infer<typeof botStatusSchema>;
+export type BotState = z.infer<typeof botStateSchema>;
+
+export const botTradeSchema = z.object({
+  id: z.number(),
+  bot_id: z.string(),
+  mint: z.string(),
+  symbol: z.string(),
+  usd_size: z.number(),
+  entry_price: z.number(),
+  entry_ts: z.string(),
+  exit_price: z.number().nullable(),
+  exit_ts: z.string().nullable(),
+  pnl_usd: z.number().nullable(),
+  pnl_pct: z.number().nullable(),
+  status: z.string(),
+  entry_note: z.string().nullable(),
+  exit_note: z.string().nullable(),
+});
+
+export type BotTrade = z.infer<typeof botTradeSchema>;
+
+export const botControlResultSchema = z.object({
+  bot_id: z.string(),
+  action: z.string(),
+  accepted: z.boolean(),
+  state: botStateSchema,
+  detail: z.string(),
+});
+
+export type BotControlResult = z.infer<typeof botControlResultSchema>;

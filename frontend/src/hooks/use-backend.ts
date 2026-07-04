@@ -5,10 +5,11 @@
  * backend data. Polling intervals stand in for live updates until the backend
  * exposes WebSocket endpoints (see the TODO in src/lib/api/services.ts).
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   agentsService,
+  botsService,
   chatService,
   healthService,
   marketService,
@@ -34,6 +35,8 @@ export const qk = {
   pumpfunGraduating: ["pumpfun", "graduating"] as const,
   paperSummary: ["trading", "summary"] as const,
   paperTrades: ["trading", "trades"] as const,
+  bots: ["bots"] as const,
+  botTrades: (botId: string | null) => ["bots", "trades", botId ?? "all"] as const,
   agents: ["agents"] as const,
   agent: (name: string) => ["agents", name] as const,
   agentReports: (name: string) => ["agents", name, "reports"] as const,
@@ -146,6 +149,37 @@ export function usePaperTrades(limit = 50) {
     queryKey: qk.paperTrades,
     queryFn: () => tradingService.getTrades(limit),
     refetchInterval: 30_000,
+  });
+}
+
+/** The bot fleet — live loops, so poll fast (10s). */
+export function useBots() {
+  return useQuery({
+    queryKey: qk.bots,
+    queryFn: botsService.list,
+    refetchInterval: 10_000,
+  });
+}
+
+/** One bot's trades (or the whole fleet's when botId is null). */
+export function useBotTrades(botId: string | null, limit = 50) {
+  return useQuery({
+    queryKey: qk.botTrades(botId),
+    queryFn: () =>
+      botId === null ? botsService.allTrades(limit) : botsService.trades(botId, limit),
+    refetchInterval: 15_000,
+  });
+}
+
+/** REAL start/stop/restart — refreshes the fleet list on success. */
+export function useBotControl() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ botId, action }: { botId: string; action: "start" | "stop" | "restart" }) =>
+      botsService.control(botId, action),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.bots });
+    },
   });
 }
 
