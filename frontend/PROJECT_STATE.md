@@ -147,11 +147,46 @@ capabilities were built to support this (no fakes, per project rule):
 - Frontend: eslint clean, `next build` passes, all 8 routes render 200
   with the new content against the running backend.
 
-## ⏭️ Next — Milestone 4
+## ✅ Milestone 4 — Pump.fun discovery + paper-trading ledger (done 2026-07-04)
+
+### Backend additions
+
+- **`modules/market/pumpfun.py`** — read-only pump.fun discovery client
+  against `frontend-api-v3.pump.fun` (unofficial but public; verified live).
+  Normalized `PumpCoin` model with bonding-curve progress toward graduation.
+  Endpoints: `GET /market/pumpfun/new`, `/pumpfun/graduating`,
+  `/pumpfun/coin/{mint}`. Rate-guarded (delay, not drop) like the other
+  providers; failures are honest `external_service_error`s.
+- **`modules/trading/paper_service.py`** — read-only bridge to the Node
+  scalper's SQLite ledger (`09 Automation/market/market.db`), opened with
+  `mode=ro` so this process physically cannot write. Endpoints:
+  `GET /trading/summary` (PnL, win rate, open/closed counts) and
+  `GET /trading/trades` (log, `?status=open|closed`). Missing DB →
+  `available: false`, never fake zeros-as-data.
+- No buy/sell endpoints anywhere — Stage 5 gate intact.
+- Tests: 55/55 (9 new: pumpfun parsing/progress/errors via MockTransport,
+  synthetic SQLite ledger, read-only enforcement, honest missing-DB state).
+
+### Frontend
+
+- **Trading page** now leads with the **Paper trading ledger** (realized
+  PnL, win rate, trade log with entry/exit/reasoning — the scalper's real
+  track record) and **Pump.fun launches** (New / Graduating toggle,
+  bonding-curve progress bars, live badges), above Trending, Watchlist,
+  and the Token inspector.
+
+### Verified live
+
+- `/market/pumpfun/new` returned coins launched seconds earlier;
+  `/trading/summary` returned the real ledger (5 trades, +$2.09 realized,
+  50% win rate, 14 snapshots); Trading page renders all cards.
+- tsc + eslint clean; `next build` passes.
+
+## ⏭️ Next — Milestone 5
 
 - Backend /vault endpoints (Memory page's remaining section, notes bridge).
 - WebSocket layer for live updates (replaces polling).
-- Paper-trading surface on the Trading page once the backend exposes the
-  Node paper-trade ledger (or a Python port of it).
+- Wire pump.fun discovery into the agents' research pipeline; optional
+  pumpfun history persistence alongside market snapshots.
 - Photon integration: pending the user's API keys — no public API exists,
   so nothing is stubbed.

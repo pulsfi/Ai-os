@@ -191,3 +191,55 @@ export const agentControlResultSchema = z.object({
 });
 
 export type AgentControlResult = z.infer<typeof agentControlResultSchema>;
+
+// --- pump.fun discovery ----------------------------------------------------
+
+export const pumpCoinSchema = z.object({
+  mint: z.string(),
+  name: z.string(),
+  symbol: z.string(),
+  created_at: z.string(),
+  usd_market_cap: z.number().nullable(),
+  reply_count: z.number(),
+  complete: z.boolean(),
+  bonding_progress_pct: z.number(),
+  is_currently_live: z.boolean(),
+  creator: z.string().nullable(),
+  creator_username: z.string().nullable(),
+  image_uri: z.string().nullable(),
+});
+
+export type PumpCoin = z.infer<typeof pumpCoinSchema>;
+
+// --- paper trading (read-only ledger) ---------------------------------------
+
+export const paperTradeSchema = z.object({
+  id: z.number(),
+  symbol: z.string(),
+  mint: z.string().nullable(),
+  usd_size: z.number(),
+  entry_price: z.number(),
+  entry_ts: z.string(),
+  exit_price: z.number().nullable(),
+  exit_ts: z.string().nullable(),
+  pnl_usd: z.number().nullable(),
+  pnl_pct: z.number().nullable(),
+  reasoning: z.string().nullable(),
+  exit_note: z.string().nullable(),
+  status: z.string(),
+});
+
+export type PaperTrade = z.infer<typeof paperTradeSchema>;
+
+export const paperSummarySchema = z.object({
+  available: z.boolean(),
+  total_trades: z.number(),
+  open_trades: z.number(),
+  closed_trades: z.number(),
+  realized_pnl_usd: z.number(),
+  win_rate_pct: z.number().nullable(),
+  last_entry_ts: z.string().nullable(),
+  snapshots_stored: z.number(),
+});
+
+export type PaperSummary = z.infer<typeof paperSummarySchema>;

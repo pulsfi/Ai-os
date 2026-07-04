@@ -12,8 +12,10 @@ import {
   chatService,
   healthService,
   marketService,
+  pumpfunService,
   solanaService,
   systemService,
+  tradingService,
 } from "@/lib/api/services";
 
 /** Query keys — centralized so invalidation stays typo-proof. */
@@ -28,6 +30,10 @@ export const qk = {
   marketToken: (address: string) => ["market", "token", address] as const,
   marketHistory: (address: string) => ["market", "history", address] as const,
   chatStatus: ["chat", "status"] as const,
+  pumpfunNew: ["pumpfun", "new"] as const,
+  pumpfunGraduating: ["pumpfun", "graduating"] as const,
+  paperSummary: ["trading", "summary"] as const,
+  paperTrades: ["trading", "trades"] as const,
   agents: ["agents"] as const,
   agent: (name: string) => ["agents", name] as const,
   agentReports: (name: string) => ["agents", name, "reports"] as const,
@@ -107,6 +113,39 @@ export function useTokenAuthorities(mint: string) {
     queryFn: () => solanaService.getTokenAuthorities(mint),
     enabled: mint.length > 0,
     retry: false,
+  });
+}
+
+/** Fresh pump.fun launches — fast-moving, poll every 15s. */
+export function usePumpfunNew(limit = 12) {
+  return useQuery({
+    queryKey: qk.pumpfunNew,
+    queryFn: () => pumpfunService.getNew(limit),
+    refetchInterval: 15_000,
+  });
+}
+
+export function usePumpfunGraduating(limit = 12) {
+  return useQuery({
+    queryKey: qk.pumpfunGraduating,
+    queryFn: () => pumpfunService.getGraduating(limit),
+    refetchInterval: 30_000,
+  });
+}
+
+export function usePaperSummary() {
+  return useQuery({
+    queryKey: qk.paperSummary,
+    queryFn: tradingService.getSummary,
+    refetchInterval: 30_000,
+  });
+}
+
+export function usePaperTrades(limit = 50) {
+  return useQuery({
+    queryKey: qk.paperTrades,
+    queryFn: () => tradingService.getTrades(limit),
+    refetchInterval: 30_000,
   });
 }
 

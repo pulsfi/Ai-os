@@ -14,6 +14,9 @@ import {
   healthReportSchema,
   historyPointSchema,
   marketStatusSchema,
+  paperSummarySchema,
+  paperTradeSchema,
+  pumpCoinSchema,
   systemInfoSchema,
   tokenAuthoritiesSchema,
   tokenInfoSchema,
@@ -27,6 +30,9 @@ import {
   type HealthReport,
   type HistoryPoint,
   type MarketStatus,
+  type PaperSummary,
+  type PaperTrade,
+  type PumpCoin,
   type SystemInfo,
   type TokenAuthorities,
   type TokenInfo,
@@ -80,6 +86,26 @@ export const marketService = {
       `/market/history/${encodeURIComponent(address)}?limit=${limit}`,
       z.array(historyPointSchema),
     ),
+};
+
+export const pumpfunService = {
+  /** GET /market/pumpfun/new — freshest pump.fun launches. */
+  getNew: (limit = 20): Promise<PumpCoin[]> =>
+    getValidated(`/market/pumpfun/new?limit=${limit}`, z.array(pumpCoinSchema)),
+
+  /** GET /market/pumpfun/graduating — closest to leaving the bonding curve. */
+  getGraduating: (limit = 20): Promise<PumpCoin[]> =>
+    getValidated(`/market/pumpfun/graduating?limit=${limit}`, z.array(pumpCoinSchema)),
+};
+
+export const tradingService = {
+  /** GET /trading/summary — paper track record (read-only ledger). */
+  getSummary: (): Promise<PaperSummary> =>
+    getValidated("/trading/summary", paperSummarySchema),
+
+  /** GET /trading/trades — paper trade log, newest first. */
+  getTrades: (limit = 50): Promise<PaperTrade[]> =>
+    getValidated(`/trading/trades?limit=${limit}`, z.array(paperTradeSchema)),
 };
 
 export const chatService = {

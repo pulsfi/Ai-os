@@ -5,15 +5,38 @@ Thin routers per the architecture: all logic lives in modules/market.
 
 from fastapi import APIRouter, Query
 
-from core.dependencies import MarketManagerDep
+from core.dependencies import MarketManagerDep, PumpFunDep
 from modules.market.market_models import (
     HistoryPoint,
     MarketStatus,
     TokenInfo,
     TokenMarketData,
 )
+from modules.market.pumpfun import PumpCoin
 
 router = APIRouter()
+
+
+@router.get("/pumpfun/new", response_model=list[PumpCoin])
+async def pumpfun_new(
+    pumpfun: PumpFunDep, limit: int = Query(default=20, ge=1, le=50)
+) -> list[PumpCoin]:
+    """Freshest pump.fun launches, newest first (read-only discovery)."""
+    return await pumpfun.get_new_coins(limit)
+
+
+@router.get("/pumpfun/graduating", response_model=list[PumpCoin])
+async def pumpfun_graduating(
+    pumpfun: PumpFunDep, limit: int = Query(default=20, ge=1, le=50)
+) -> list[PumpCoin]:
+    """Highest-cap coins still on the bonding curve — closest to graduation."""
+    return await pumpfun.get_graduating(limit)
+
+
+@router.get("/pumpfun/coin/{mint}", response_model=PumpCoin)
+async def pumpfun_coin(mint: str, pumpfun: PumpFunDep) -> PumpCoin:
+    """One pump.fun launch by mint address."""
+    return await pumpfun.get_coin(mint)
 
 
 @router.get("/tokens", response_model=list[TokenMarketData])

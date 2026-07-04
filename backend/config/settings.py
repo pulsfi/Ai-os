@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # --- vault bridge for the agents API (read-only) ---
     agents_dir: str = "04 Agents"  # relative to vault_path
 
+    # --- paper trading ledger (read-only; written by the Node scalper) ---
+    paper_db_path: str = "09 Automation/market/market.db"  # relative to vault_path
+
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
     market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token

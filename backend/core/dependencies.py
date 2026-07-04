@@ -21,7 +21,9 @@ from database.redis_client import get_redis
 from modules.agents import AgentsService, get_agents_service
 from modules.chat import ChatService, get_chat_service
 from modules.market import MarketManager, get_market_manager
+from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
 from modules.solana import RpcClient, get_rpc_client
+from modules.trading import PaperTradingService, get_paper_trading_service
 from services.health import HealthService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -64,6 +66,16 @@ def get_agents(settings: SettingsDep) -> AgentsService:
     return get_agents_service(settings)
 
 
+def get_pumpfun(settings: SettingsDep) -> PumpFunClient:
+    """Provide the read-only pump.fun discovery client."""
+    return get_pumpfun_client(settings)
+
+
+def get_paper_trading(settings: SettingsDep) -> PaperTradingService:
+    """Provide the read-only paper-trading ledger view."""
+    return get_paper_trading_service(settings)
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
@@ -71,3 +83,5 @@ SolanaClientDep = Annotated[RpcClient, Depends(get_solana_client)]
 MarketManagerDep = Annotated[MarketManager, Depends(get_market)]
 ChatServiceDep = Annotated[ChatService, Depends(get_chat)]
 AgentsServiceDep = Annotated[AgentsService, Depends(get_agents)]
+PumpFunDep = Annotated[PumpFunClient, Depends(get_pumpfun)]
+PaperTradingDep = Annotated[PaperTradingService, Depends(get_paper_trading)]
