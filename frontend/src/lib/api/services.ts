@@ -3,17 +3,33 @@
  * Zod-validated. Components never call these directly; they use the
  * TanStack Query hooks in src/hooks.
  */
-import { getValidated } from "./client";
+import { getValidated, postValidated } from "./client";
 import {
+  agentControlResultSchema,
+  agentDetailSchema,
+  agentReportSchema,
+  agentSummarySchema,
   chainStatusSchema,
+  chatStatusSchema,
   healthReportSchema,
+  historyPointSchema,
   marketStatusSchema,
   systemInfoSchema,
+  tokenAuthoritiesSchema,
+  tokenInfoSchema,
   tokenMarketDataSchema,
+  type AgentControlResult,
+  type AgentDetail,
+  type AgentReport,
+  type AgentSummary,
   type ChainStatus,
+  type ChatStatus,
   type HealthReport,
+  type HistoryPoint,
   type MarketStatus,
   type SystemInfo,
+  type TokenAuthorities,
+  type TokenInfo,
   type TokenMarketData,
 } from "./schemas";
 import { z } from "zod";
@@ -32,6 +48,13 @@ export const solanaService = {
   /** GET /solana/status — live chain snapshot (health, slot, epoch, TPS). */
   getChainStatus: (): Promise<ChainStatus> =>
     getValidated("/solana/status", chainStatusSchema),
+
+  /** GET /solana/token/{mint}/authorities — on-chain rug check. */
+  getTokenAuthorities: (mint: string): Promise<TokenAuthorities> =>
+    getValidated(
+      `/solana/token/${encodeURIComponent(mint)}/authorities`,
+      tokenAuthoritiesSchema,
+    ),
 };
 
 export const marketService = {
@@ -46,6 +69,49 @@ export const marketService = {
   /** GET /market/status — provider/cache/scheduler monitoring. */
   getStatus: (): Promise<MarketStatus> =>
     getValidated("/market/status", marketStatusSchema),
+
+  /** GET /market/token/{address} — merged data + on-chain metadata. */
+  getToken: (address: string): Promise<TokenInfo> =>
+    getValidated(`/market/token/${encodeURIComponent(address)}`, tokenInfoSchema),
+
+  /** GET /market/history/{address} — stored snapshots (needs PostgreSQL). */
+  getHistory: (address: string, limit = 100): Promise<HistoryPoint[]> =>
+    getValidated(
+      `/market/history/${encodeURIComponent(address)}?limit=${limit}`,
+      z.array(historyPointSchema),
+    ),
+};
+
+export const chatService = {
+  /** GET /chat/status — whether the assistant is configured, and its model. */
+  getStatus: (): Promise<ChatStatus> => getValidated("/chat/status", chatStatusSchema),
+  // Streaming send lives in ./chat-stream.ts (fetch-based SSE reader).
+};
+
+export const agentsService = {
+  /** GET /agents — pipeline agents with vault-derived status. */
+  list: (): Promise<AgentSummary[]> =>
+    getValidated("/agents", z.array(agentSummarySchema)),
+
+  /** GET /agents/{name} — full detail (mission, rules, tasks). */
+  get: (name: string): Promise<AgentDetail> =>
+    getValidated(`/agents/${encodeURIComponent(name)}`, agentDetailSchema),
+
+  /** GET /agents/{name}/reports — report log, newest first. */
+  reports: (name: string): Promise<AgentReport[]> =>
+    getValidated(`/agents/${encodeURIComponent(name)}/reports`, z.array(agentReportSchema)),
+
+  /**
+   * POST /agents/{name}/{action} — start | stop | restart.
+   * The backend currently declines with a reason (no runtime until Stage 6);
+   * the UI must surface that reason honestly.
+   */
+  control: (name: string, action: "start" | "stop" | "restart"): Promise<AgentControlResult> =>
+    postValidated(
+      `/agents/${encodeURIComponent(name)}/${action}`,
+      undefined,
+      agentControlResultSchema,
+    ),
 };
 
 // TODO(backend): WebSocket endpoints for live updates (agent status, logs,

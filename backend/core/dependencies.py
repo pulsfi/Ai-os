@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import Settings, get_settings
 from database.engine import get_session_factory
 from database.redis_client import get_redis
+from modules.agents import AgentsService, get_agents_service
+from modules.chat import ChatService, get_chat_service
 from modules.market import MarketManager, get_market_manager
 from modules.solana import RpcClient, get_rpc_client
 from services.health import HealthService
@@ -52,8 +54,20 @@ def get_market(settings: SettingsDep) -> MarketManager:
     return get_market_manager(settings)
 
 
+def get_chat(settings: SettingsDep) -> ChatService:
+    """Provide the Claude chat service (key-gated)."""
+    return get_chat_service(settings)
+
+
+def get_agents(settings: SettingsDep) -> AgentsService:
+    """Provide the read-only vault agents service."""
+    return get_agents_service(settings)
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
 SolanaClientDep = Annotated[RpcClient, Depends(get_solana_client)]
 MarketManagerDep = Annotated[MarketManager, Depends(get_market)]
+ChatServiceDep = Annotated[ChatService, Depends(get_chat)]
+AgentsServiceDep = Annotated[AgentsService, Depends(get_agents)]

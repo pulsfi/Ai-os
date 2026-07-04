@@ -18,6 +18,7 @@ from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from database.engine import dispose_engine
 from database.redis_client import close_redis
+from modules.chat import close_chat_service
 from modules.market import close_market_manager, get_market_manager
 from modules.market.market_scheduler import MarketScheduler
 from modules.solana import close_rpc_client
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if scheduler is not None:
         await scheduler.stop()
     await close_market_manager()
+    await close_chat_service()
     await dispose_engine()
     await close_redis()
     await close_rpc_client()
@@ -78,7 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET"],  # read-only API surface for now
+        allow_methods=["GET", "POST"],  # POST: /chat stream + /agents controls
         allow_headers=["*"],
     )
 

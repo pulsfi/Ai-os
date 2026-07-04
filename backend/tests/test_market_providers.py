@@ -100,7 +100,9 @@ async def test_rate_guard_delays_rapid_calls() -> None:
     start = time.monotonic()
     assert await provider.get_quote("MintA") is not None
     assert await provider.get_quote("MintA") is not None  # delayed, not lost
-    assert time.monotonic() - start >= 0.3  # the guard actually paced us
+    # Windows timer granularity (~16ms) can wake sleep() a hair early;
+    # assert the guard paced us within that tolerance, not to the exact ms.
+    assert time.monotonic() - start >= 0.3 - 0.05
 
 
 async def test_provider_stats_track_errors() -> None:

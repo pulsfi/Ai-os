@@ -98,9 +98,60 @@ an inline error with retry.
 - WebSockets: backend has **no WS endpoints yet** — polling stands in;
   typed TODO recorded in `services.ts` (no fake implementations).
 
-## ⏭️ Next — Milestone 3: Blockchain + Trading pages
+## ✅ Milestone 3 — All feature pages live (done 2026-07-04)
 
-- Blockchain page: /solana/status detail + token authority rug-check lookup.
-- Trading page: /market/tokens + /market/trending + /market/history charts.
-- Then: Agents, Memory (vault bridge endpoints TBD on backend), Terminal,
-  Settings, AI Chat; WebSocket layer when the backend exposes it.
+Every section is now a real page against real endpoints. Two NEW backend
+capabilities were built to support this (no fakes, per project rule):
+
+### Backend additions (backend/)
+
+- **POST /api/v1/chat** — SSE streaming chat via the Claude API
+  (`modules/chat`, model `claude-opus-4-8`). Key-gated like the market
+  providers: without `ANTHROPIC_API_KEY` it returns the standard
+  `configuration_error` envelope. `GET /chat/status` reports availability.
+- **GET /api/v1/agents** (+ `/{name}`, `/{name}/reports`) — read-only
+  bridge to the vault's `04 Agents/` markdown (`modules/agents`): status
+  from frontmatter, description from the hub note, logs from Reports.md.
+  `POST /agents/{name}/{start|stop|restart}` exists as a typed contract but
+  **honestly declines** (`accepted: false` + reason) — no process runtime
+  until Stage 6.
+- CORS now allows POST; chat client closed in lifespan; `.env.example`
+  documents `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `AGENTS_DIR`.
+- Tests: 46/46 pass (13 new: SSE framing, mid-stream errors, key gating,
+  synthetic-vault agents fixtures, traversal rejection, honest controls).
+
+### Frontend pages
+
+- **AI Chat** — token-by-token streaming (fetch + ReadableStream SSE parser
+  in `src/lib/api/chat-stream.ts`), stop button, honest "not configured"
+  banner when the backend has no key.
+- **Agent Manager** — 7 status cards from /agents (status, report count,
+  last activity), detail sheet with Mission + report log, start/stop/restart
+  buttons that surface the backend's decline reason as a toast.
+- **Blockchain** — live ChainStatusCard + on-chain rug check
+  (/solana/token/{mint}/authorities) with revoked/active verdicts.
+- **Trading** — WatchlistCard + Trending (ranked movers) + Token inspector
+  (/market/token/{address} + stored history with an honest "requires
+  PostgreSQL" state). Read-only by design: no buy/sell until Stage 5.
+- **Terminal** — real GET console against the live API (type an endpoint,
+  see the actual JSON + latency). Deliberately not a fake shell.
+- **Memory** — per-agent knowledge from live /agents; vault memory notes
+  clearly marked as awaiting the /vault backend endpoints.
+- **Settings** — live config state: /system/info, /chat/status, market
+  provider keys (configured/not), cache + scheduler state, API base URL.
+
+### Verified
+
+- Backend: 46/46 pytest; live smoke of /chat/status, /agents (7 real
+  agents, pipeline order, Execution=standby), gated control, 404s.
+- Frontend: eslint clean, `next build` passes, all 8 routes render 200
+  with the new content against the running backend.
+
+## ⏭️ Next — Milestone 4
+
+- Backend /vault endpoints (Memory page's remaining section, notes bridge).
+- WebSocket layer for live updates (replaces polling).
+- Paper-trading surface on the Trading page once the backend exposes the
+  Node paper-trade ledger (or a Python port of it).
+- Photon integration: pending the user's API keys — no public API exists,
+  so nothing is stubbed.

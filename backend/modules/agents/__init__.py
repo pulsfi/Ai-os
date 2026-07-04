@@ -1,14 +1,20 @@
-"""Agents module — runtime for the seven-agent system.
+"""Agents module — read-only bridge to the vault's 7-agent pipeline.
 
 The agent definitions (Mission/Rules/Tasks/Memory/Reports) live as
-Markdown in the vault (`04 Agents/`); this module will give them an
-executable runtime while the vault stays the human-readable source
-of truth.
+Markdown in the vault (`04 Agents/`); this module parses them into the
+typed /agents API while the vault stays the human-readable source of truth.
 
-TODO(agents): Agent base class: identity, rules loading (via modules.vault),
-              task queue, report writer.
-TODO(agents): implement read-only agents first: Research, Monitoring.
-TODO(agents): agent status registry exposed at /api/v1/agents.
-TODO(agents): explicit gate — Execution Agent stays a stub until the
+Public surface:
+    AgentsService       — lists agents, reads status/mission/reports from markdown
+    get_agents_service  — process-wide singleton accessor
+
+TODO(agents): executable runtime (start/stop/restart) stays gated until
+              Stage 6 (Multi-Agent Automation); the control endpoint
+              reports "runtime not available" honestly until then.
+TODO(agents): explicit gate — Execution Agent stays read-only until the
               paper-trading track record justifies Stage 5 (see roadmap).
 """
+
+from modules.agents.agents_service import AgentsService, get_agents_service
+
+__all__ = ["AgentsService", "get_agents_service"]

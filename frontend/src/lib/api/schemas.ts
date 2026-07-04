@@ -109,3 +109,85 @@ export const marketStatusSchema = z.object({
 
 export type MarketStatus = z.infer<typeof marketStatusSchema>;
 export type ProviderStatus = z.infer<typeof providerStatusSchema>;
+
+// --- solana: token authorities (rug check) ------------------------------
+
+export const tokenAuthoritiesSchema = z.object({
+  mint_authority: z.string().nullable(),
+  freeze_authority: z.string().nullable(),
+  is_fully_revoked: z.boolean(),
+});
+
+export type TokenAuthorities = z.infer<typeof tokenAuthoritiesSchema>;
+
+// --- market: single token + history -------------------------------------
+
+export const tokenInfoSchema = z.object({
+  market: tokenMarketDataSchema,
+  decimals: z.number().nullable(),
+  supply_ui: z.number().nullable(),
+  authorities: tokenAuthoritiesSchema.nullable(),
+});
+
+export type TokenInfo = z.infer<typeof tokenInfoSchema>;
+
+export const historyPointSchema = z.object({
+  ts: z.string(),
+  price_usd: z.number().nullable(),
+  change_24h: z.number().nullable(),
+  volume_24h: z.number().nullable(),
+  liquidity_usd: z.number().nullable(),
+  market_cap: z.number().nullable(),
+  fdv: z.number().nullable(),
+  sources: z.string().nullable(),
+});
+
+export type HistoryPoint = z.infer<typeof historyPointSchema>;
+
+// --- chat ----------------------------------------------------------------
+
+export const chatStatusSchema = z.object({
+  configured: z.boolean(),
+  model: z.string(),
+});
+
+export type ChatStatus = z.infer<typeof chatStatusSchema>;
+
+// --- agents ----------------------------------------------------------------
+
+export const agentSummarySchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  created: z.string().nullable(),
+  description: z.string(),
+  report_count: z.number(),
+  last_report_date: z.string().nullable(),
+  last_activity: z.string().nullable(),
+});
+
+export type AgentSummary = z.infer<typeof agentSummarySchema>;
+
+export const agentDetailSchema = agentSummarySchema.extend({
+  mission: z.string(),
+  rules: z.string(),
+  tasks: z.string(),
+});
+
+export type AgentDetail = z.infer<typeof agentDetailSchema>;
+
+export const agentReportSchema = z.object({
+  title: z.string(),
+  date: z.string(),
+  body: z.string(),
+});
+
+export type AgentReport = z.infer<typeof agentReportSchema>;
+
+export const agentControlResultSchema = z.object({
+  agent: z.string(),
+  action: z.string(),
+  accepted: z.boolean(),
+  reason: z.string(),
+});
+
+export type AgentControlResult = z.infer<typeof agentControlResultSchema>;

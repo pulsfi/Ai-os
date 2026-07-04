@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
 
+    # --- AI chat (Claude API; key-gated like the market providers) ---
+    anthropic_api_key: str = ""  # empty = chat endpoint reports "not configured"
+    anthropic_model: str = "claude-opus-4-8"
+    chat_max_tokens: int = 4096
+
+    # --- vault bridge for the agents API (read-only) ---
+    agents_dir: str = "04 Agents"  # relative to vault_path
+
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
     market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token

@@ -74,3 +74,22 @@ export async function getValidated<T>(url: string, schema: ZodType<T>): Promise<
   }
   return parsed.data;
 }
+
+/** POST + Zod-validate — same contract-drift guarantee as getValidated. */
+export async function postValidated<T>(
+  url: string,
+  body: unknown,
+  schema: ZodType<T>,
+): Promise<T> {
+  const res = await http.post(url, body);
+  const parsed = schema.safeParse(res.data);
+  if (!parsed.success) {
+    throw new ApiError(
+      `Unexpected response shape from ${url}`,
+      "contract_mismatch",
+      res.status,
+      parsed.error.issues,
+    );
+  }
+  return parsed.data;
+}
