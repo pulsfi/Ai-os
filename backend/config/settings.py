@@ -44,6 +44,13 @@ class Settings(BaseSettings):
 
     # --- api ---
     api_v1_prefix: str = "/api/v1"
+    # Browser origins allowed to call this API (the Next.js frontend).
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3010",
+        "http://127.0.0.1:3010",
+    ]
 
     # --- infrastructure ---
     database_url: str = "postgresql+asyncpg://osai:osai@localhost:5432/osai"

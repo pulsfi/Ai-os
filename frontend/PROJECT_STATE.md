@@ -62,18 +62,45 @@ frontend/
 
 ---
 
-## ⏭️ Next — Milestone 2: API layer & data hooks
+## ✅ Milestone 2 — API layer + live Dashboard (done 2026-07-04)
 
-- Axios instance (`src/lib/api/client.ts`) with `apiBaseUrl`, error-envelope
-  interceptor, typed request helpers.
-- Per-domain services: `health`, `solana`, `market` (mirror the FastAPI
-  endpoints already live: `/health`, `/solana/*`, `/market/*`).
-- TanStack Query hooks per service; Zod response schemas in `src/types`.
-- Missing endpoints get a typed service stub with `TODO` — **no mock data**.
+Dashboard connected to the real FastAPI backend. **Zero mock data** — every
+widget reads a live endpoint, shows skeletons while loading, and degrades to
+an inline error with retry.
 
-## Backlog (later milestones)
+### Completed
 
-- Feature pages (dashboard metrics, agents, blockchain, trading, memory,
-  terminal, settings) wired to the API layer.
-- WebSocket layer for live updates (agent status, logs, metrics, trades).
-- AI chat page. Framer Motion transitions. Global toasts on mutations.
+- **API layer:** `src/lib/api/client.ts` (Axios + error-envelope → typed
+  `ApiError`, 30s timeout for cold market sweeps), `schemas.ts` (Zod mirrors
+  of the backend contracts — responses are validated, contract drift throws
+  `contract_mismatch`), `services.ts` (health/system/solana/market).
+- **Hooks:** `src/hooks/use-backend.ts` — TanStack Query hooks with polling
+  (health 15s, chain 10s, market 30s) + centralized query keys.
+- **Dashboard widgets** (`src/components/dashboard/`): SystemHealthCard
+  (/health + /system/info), ChainStatusCard (/solana/status, epoch progress
+  bar), WatchlistCard (/market/tokens table w/ divergence warning),
+  MarketStatusCard (/market/status providers/cache/scheduler). Shared
+  `StatusPill`, `WidgetError`; `FadeIn` motion wrapper (reduced-motion safe).
+- **Backend change:** CORS middleware added (`config.settings.cors_origins`,
+  GET-only) — without it the browser blocks every request. 33/33 backend
+  tests still pass.
+- `src/lib/format.ts` — price/money/pct/int/timeAgo formatters.
+
+### Verified
+
+- tsc + eslint clean; `next build` passes.
+- Live end-to-end: backend answers with
+  `access-control-allow-origin: http://localhost:3010`; /dashboard renders all
+  four widgets; /market/tokens returns 4 live tokens (3 providers each).
+
+### Notes
+
+- WebSockets: backend has **no WS endpoints yet** — polling stands in;
+  typed TODO recorded in `services.ts` (no fake implementations).
+
+## ⏭️ Next — Milestone 3: Blockchain + Trading pages
+
+- Blockchain page: /solana/status detail + token authority rug-check lookup.
+- Trading page: /market/tokens + /market/trending + /market/history charts.
+- Then: Agents, Memory (vault bridge endpoints TBD on backend), Terminal,
+  Settings, AI Chat; WebSocket layer when the backend exposes it.

@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.router import api_router
 from config import Settings, get_settings
@@ -70,6 +71,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+
+    # The Next.js frontend calls this API from the browser; without CORS
+    # every cross-origin request is blocked before it reaches a route.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET"],  # read-only API surface for now
+        allow_headers=["*"],
+    )
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
