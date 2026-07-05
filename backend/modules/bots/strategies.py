@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from core.exceptions import AppError
 from modules.market import MarketManager
+from modules.market.helius import HeliusClient
 from modules.market.pumpfun import PumpCoin, PumpFunClient
 
 logger = logging.getLogger(__name__)
@@ -68,10 +69,17 @@ class Strategy(ABC):
 class NewLaunchSniper(Strategy):
     """Buys brand-new pump.fun launches that show immediate traction.
 
-    Filter: younger than max_age_s, market cap already above the floor
-    (someone besides the creator bought), at least one reply. Meme-coin
-    sniping is the highest-risk style there is — which is exactly why it
-    runs on virtual dollars while the track record accumulates.
+    Two-stage filter, like a pro sniper:
+      1. Launch shape — younger than max_age_s, market cap above the floor
+         (someone besides the creator bought), at least one reply.
+      2. FLOW CONFIRMATION (when Helius is configured) — the token's live
+         transactions must show real buying: enough swaps, enough distinct
+         wallets, and buys outweighing sells. A pump with no flow behind
+         it is a trap; those candidates are skipped, and a failed flow
+         lookup skips the coin too (conservative by default).
+
+    Meme-coin sniping is the highest-risk style there is — which is
+    exactly why it runs on virtual dollars while the record accumulates.
     """
 
     name = "new_launch_sniper"
@@ -80,14 +88,46 @@ class NewLaunchSniper(Strategy):
         self,
         pumpfun: PumpFunClient,
         market: MarketManager,
+        helius: HeliusClient | None = None,
         max_age_s: float = 180.0,
         min_mcap_usd: float = 6_000.0,
         max_mcap_usd: float = 60_000.0,
+        min_flow_swaps: int = 3,
+        min_flow_wallets: int = 3,
+        min_buy_ratio_pct: float = 55.0,
     ) -> None:
         super().__init__(pumpfun, market)
+        self._helius = helius
         self._max_age_s = max_age_s
         self._min_mcap = min_mcap_usd
         self._max_mcap = max_mcap_usd
+        self._min_flow_swaps = min_flow_swaps
+        self._min_flow_wallets = min_flow_wallets
+        self._min_buy_ratio = min_buy_ratio_pct
+
+    async def _flow_note(self, mint: str) -> str | None:
+        """Flow-confirmation verdict: a note when confirmed, None to skip.
+
+        Without a configured Helius client the gate is inactive (the
+        basic filters still apply) — stated in the entry note honestly.
+        """
+        if self._helius is None or not self._helius.is_configured:
+            return "flow gate off (no HELIUS_API_KEY)"
+        try:
+            activity = await self._helius.get_token_activity(mint, limit=30)
+        except AppError:
+            return None  # can't verify flow -> don't enter
+        if (
+            activity.swaps < self._min_flow_swaps
+            or activity.unique_wallets < self._min_flow_wallets
+            or activity.buy_ratio_pct is None
+            or activity.buy_ratio_pct < self._min_buy_ratio
+        ):
+            return None
+        return (
+            f"flow {activity.buy_ratio_pct}% buys "
+            f"({activity.buys}B/{activity.sells}S, {activity.unique_wallets} wallets)"
+        )
 
     async def find_entries(self, held_mints: set[str], slots: int) -> list[EntrySignal]:
         coins = await self._pumpfun.get_new_coins(limit=30)
@@ -107,6 +147,9 @@ class NewLaunchSniper(Strategy):
                 or coin.reply_count < 1
             ):
                 continue
+            flow = await self._flow_note(coin.mint)
+            if flow is None:
+                continue  # no confirmed buying behind the move
             signals.append(
                 EntrySignal(
                     mint=coin.mint,
@@ -114,8 +157,8 @@ class NewLaunchSniper(Strategy):
                     price_usd=price,
                     note=(
                         f"new launch {int((now - coin.created_at).total_seconds())}s old, "
-                        f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies "
-                        f"(price=mcap/1B)"
+                        f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies, "
+                        f"{flow} (price=mcap/1B)"
                     ),
                 )
             )

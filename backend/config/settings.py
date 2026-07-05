@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     bots_usd_per_trade: float = 50.0  # virtual position size
     bots_db_path: str = "data/paper_bots.db"  # bot ledger, relative to backend/
 
+    # --- daily fleet report (auto vault write; same constrained path) ---
+    daily_report_enabled: bool = False  # true = write the diary automatically
+    daily_report_hour_utc: int = 20  # when to write, 0-23 UTC
+
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
     market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token

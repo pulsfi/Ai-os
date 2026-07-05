@@ -32,6 +32,7 @@ from modules.bots.strategies import (
     TrendScalper,
 )
 from modules.market import get_market_manager
+from modules.market.helius import get_helius_client
 from modules.market.pumpfun import get_pumpfun_client
 
 logger = logging.getLogger(__name__)
@@ -44,13 +45,18 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             id="sniper",
             name="Launch Sniper",
             strategy="new_launch_sniper",
-            description="Buys brand-new pump.fun launches with early traction",
+            description=(
+                "Buys brand-new pump.fun launches with early traction, "
+                "flow-confirmed via Helius (real buys behind the move)"
+            ),
             interval_s=settings.bots_interval_seconds,
             usd_per_trade=usd,
             max_open_positions=3,
             take_profit_pct=40.0,
             stop_loss_pct=25.0,
             max_hold_s=15 * 60,
+            trail_after_pct=15.0,  # up 15%? protect it:
+            trail_drop_pct=10.0,  # give back 10% from peak -> out
         ),
         BotConfig(
             id="graduate",
@@ -63,6 +69,8 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             take_profit_pct=20.0,
             stop_loss_pct=12.0,
             max_hold_s=60 * 60,
+            trail_after_pct=8.0,
+            trail_drop_pct=5.0,
         ),
         BotConfig(
             id="trend",
@@ -75,6 +83,8 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             take_profit_pct=3.0,
             stop_loss_pct=2.0,
             max_hold_s=6 * 60 * 60,
+            trail_after_pct=1.5,
+            trail_drop_pct=1.0,
         ),
     ]
 
@@ -87,8 +97,9 @@ class BotManager:
         self._ledger = BotLedger(Path(settings.bots_db_path))
         pumpfun = get_pumpfun_client(settings)
         market = get_market_manager(settings)
+        helius = get_helius_client(settings)  # flow gate; inactive without a key
         strategies = {
-            "new_launch_sniper": NewLaunchSniper(pumpfun, market),
+            "new_launch_sniper": NewLaunchSniper(pumpfun, market, helius),
             "graduation_momentum": GraduationMomentum(pumpfun, market),
             "trend_scalper": TrendScalper(pumpfun, market),
         }

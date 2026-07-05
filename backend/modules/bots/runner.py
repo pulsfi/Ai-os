@@ -35,6 +35,8 @@ class BotRunner:
         # trade_id -> last seen price; lets max-hold close honestly when
         # live data for a dead launch disappears.
         self._last_price: dict[int, float] = {}
+        # trade_id -> peak price since entry (drives the trailing stop).
+        self._peak_price: dict[int, float] = {}
 
     # -- control -------------------------------------------------------------
 
@@ -92,9 +94,26 @@ class BotRunner:
 
             held_s = (now - datetime.fromisoformat(trade.entry_ts)).total_seconds()
             if price is not None:
+                peak = max(self._peak_price.get(trade.id, trade.entry_price), price)
+                self._peak_price[trade.id] = peak
                 change_pct = (price - trade.entry_price) / trade.entry_price * 100
+                peak_gain_pct = (peak - trade.entry_price) / trade.entry_price * 100
                 if change_pct >= self.config.take_profit_pct:
                     self._close(trade.id, price, f"take-profit +{change_pct:.1f}%")
+                    continue
+                # Trailing stop: armed once the peak gain clears the
+                # threshold; fires when price gives back too much of it.
+                if (
+                    self.config.trail_after_pct is not None
+                    and self.config.trail_drop_pct is not None
+                    and peak_gain_pct >= self.config.trail_after_pct
+                    and price <= peak * (1 - self.config.trail_drop_pct / 100)
+                ):
+                    self._close(
+                        trade.id,
+                        price,
+                        f"trailing-stop +{change_pct:.1f}% (peak +{peak_gain_pct:.1f}%)",
+                    )
                     continue
                 if change_pct <= -self.config.stop_loss_pct:
                     self._close(trade.id, price, f"stop-loss {change_pct:.1f}%")
@@ -111,6 +130,7 @@ class BotRunner:
     def _close(self, trade_id: int, price: float, note: str) -> None:
         self._ledger.close_trade(trade_id, price, note)
         self._last_price.pop(trade_id, None)
+        self._peak_price.pop(trade_id, None)
         logger.info("bot %s closed trade %s: %s", self.config.id, trade_id, note)
 
     async def _open_new_positions(self) -> None:
@@ -129,6 +149,7 @@ class BotRunner:
                 entry_note=signal.note,
             )
             self._last_price[trade_id] = signal.price_usd
+            self._peak_price[trade_id] = signal.price_usd
             logger.info(
                 "bot %s opened %s (%s) @ %.10f — %s",
                 self.config.id, signal.symbol, trade_id, signal.price_usd, signal.note,

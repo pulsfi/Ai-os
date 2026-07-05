@@ -29,6 +29,11 @@ class BotConfig(BaseModel):
     take_profit_pct: float = Field(gt=0)
     stop_loss_pct: float = Field(gt=0, description="Positive number, e.g. 15 = -15%")
     max_hold_s: float = Field(gt=0, description="Force-close positions older than this")
+    # Trailing stop (pro exit): once a position is up trail_after_pct,
+    # close it if price falls trail_drop_pct from its peak — locks profit
+    # instead of round-tripping back to the fixed stop.
+    trail_after_pct: float | None = Field(default=None, gt=0)
+    trail_drop_pct: float | None = Field(default=None, gt=0)
 
 
 class BotStatus(BaseModel):

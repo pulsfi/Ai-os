@@ -25,6 +25,8 @@ from modules.market.helius import close_helius_client
 from modules.market.pumpfun import close_pumpfun_client
 from modules.market.market_scheduler import MarketScheduler
 from modules.solana import close_rpc_client
+from modules.vault import get_vault_service
+from modules.vault.report_scheduler import DailyReportScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.bots_enabled and settings.bots_autostart:
         # Paper-mode fleet trades continuously from boot (virtual USD only).
         get_bot_manager(settings).start_all()
+    report_scheduler: DailyReportScheduler | None = None
+    if settings.bots_enabled and settings.daily_report_enabled:
+        report_scheduler = DailyReportScheduler(
+            get_bot_manager(settings),
+            get_vault_service(settings),
+            settings.daily_report_hour_utc,
+        )
+        report_scheduler.start()
     yield
+    if report_scheduler is not None:
+        await report_scheduler.stop()
     if scheduler is not None:
         await scheduler.stop()
     await close_bot_manager()

@@ -322,9 +322,32 @@ no keys, no signing anywhere in the module tree (Stage 5 gate intact).
   fleet stats — and the tuned Graduation Rider now shows a 50% win
   rate (was 0% before the 85–98.5% entry band).
 
-## ⏭️ Next — Milestone 9
+## ✅ Milestone 9 — Pro trading behaviors (done 2026-07-05)
 
-- Feed the Helius flow signal into the Launch Sniper (require buy
-  pressure before entry) once enough activity data accumulates.
-- Optional: scheduled daily report (needs a user-created Windows task
-  or an in-process daily timer).
+Three behaviors real scalpers use, all paper-mode:
+
+- **Trailing stops** (runner): once a position's peak gain clears
+  `trail_after_pct`, it closes when price gives back `trail_drop_pct`
+  from the peak — locks profit instead of round-tripping to the fixed
+  stop. Per-bot: sniper 15/10, graduate 8/5, trend 1.5/1.
+- **Flow-gated sniper**: the Launch Sniper now requires Helius flow
+  confirmation before entering a fresh launch — ≥3 swaps, ≥3 distinct
+  wallets, ≥55% buy ratio. Failed/unavailable flow lookups skip the
+  coin (conservative). Without a key the gate is off and the entry
+  note says so honestly.
+- **Auto daily report**: `DailyReportScheduler` writes the fleet report
+  into `12 Daily Notes/` every day at 20:00 UTC (config:
+  `DAILY_REPORT_ENABLED/HOUR_UTC`, on in the local .env) — same
+  constrained append-only write path as the manual button.
+
+Tests: 95/95 (9 new: trail lock-in + not-armed, flow accept/reject/
+fail-closed/gate-off, scheduler timing math, write_now). Verified live:
+all bots running with trail configs, scheduler started at 20:00 UTC.
+
+## ⏭️ Next — Milestone 10
+
+- Let the flow-gated + trailing fleet build a multi-day record; then
+  strategy review round 2 (sniper mcap band, trend take-profit).
+- Bot config editing from the Settings page.
+- Stage 5 (live execution) decision waits for a profitable multi-week
+  paper record — wallet integration + hard limits when it's justified.
