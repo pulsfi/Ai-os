@@ -37,6 +37,8 @@ class BotRunner:
         self._last_price: dict[int, float] = {}
         # trade_id -> peak price since entry (drives the trailing stop).
         self._peak_price: dict[int, float] = {}
+        # Serializes scheduled ticks with event-driven request_tick calls.
+        self._tick_lock = asyncio.Lock()
 
     # -- control -------------------------------------------------------------
 
@@ -81,9 +83,31 @@ class BotRunner:
 
     async def tick(self) -> None:
         """One full evaluate cycle (public so tests can drive it directly)."""
-        self._ticks += 1
-        await self._manage_open_positions()
-        await self._open_new_positions()
+        async with self._tick_lock:
+            self._ticks += 1
+            await self._manage_open_positions()
+            await self._open_new_positions()
+
+    def request_tick(self) -> None:
+        """Event-driven tick: evaluate NOW instead of waiting the interval.
+
+        Called by the launch stream the instant a new token appears. The
+        lock serializes it with the scheduled loop, so a burst of events
+        can never double-enter a position.
+        """
+        if not self.is_running:
+            return
+        asyncio.create_task(self._event_tick(), name=f"bot:{self.config.id}:event")
+
+    async def _event_tick(self) -> None:
+        try:
+            await self.tick()
+        except Exception as exc:  # noqa: BLE001 — same containment as the loop
+            self._errors += 1
+            self._last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "bot %s event tick failed: %s", self.config.id, self._last_error
+            )
 
     async def _manage_open_positions(self) -> None:
         now = datetime.now(timezone.utc)
@@ -99,7 +123,7 @@ class BotRunner:
                 change_pct = (price - trade.entry_price) / trade.entry_price * 100
                 peak_gain_pct = (peak - trade.entry_price) / trade.entry_price * 100
                 if change_pct >= self.config.take_profit_pct:
-                    self._close(trade.id, price, f"take-profit +{change_pct:.1f}%")
+                    self._close(trade.id, trade.mint, price, f"take-profit +{change_pct:.1f}%")
                     continue
                 # Trailing stop: armed once the peak gain clears the
                 # threshold; fires when price gives back too much of it.
@@ -111,12 +135,13 @@ class BotRunner:
                 ):
                     self._close(
                         trade.id,
+                        trade.mint,
                         price,
                         f"trailing-stop +{change_pct:.1f}% (peak +{peak_gain_pct:.1f}%)",
                     )
                     continue
                 if change_pct <= -self.config.stop_loss_pct:
-                    self._close(trade.id, price, f"stop-loss {change_pct:.1f}%")
+                    self._close(trade.id, trade.mint, price, f"stop-loss {change_pct:.1f}%")
                     continue
             if held_s >= self.config.max_hold_s:
                 # Close at the last real price we saw; entry price if the
@@ -125,12 +150,14 @@ class BotRunner:
                 note = f"max-hold {int(held_s)}s"
                 if trade.id not in self._last_price:
                     note += " (no live price seen; closed flat)"
-                self._close(trade.id, exit_price, note)
+                self._close(trade.id, trade.mint, exit_price, note)
 
-    def _close(self, trade_id: int, price: float, note: str) -> None:
+    def _close(self, trade_id: int, mint: str, price: float, note: str) -> None:
         self._ledger.close_trade(trade_id, price, note)
         self._last_price.pop(trade_id, None)
         self._peak_price.pop(trade_id, None)
+        # Let the strategy release live-stream resources for this mint.
+        asyncio.create_task(self._strategy.on_position_closed(mint))
         logger.info("bot %s closed trade %s: %s", self.config.id, trade_id, note)
 
     async def _open_new_positions(self) -> None:

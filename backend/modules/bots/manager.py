@@ -34,6 +34,7 @@ from modules.bots.strategies import (
 from modules.market import get_market_manager
 from modules.market.helius import get_helius_client
 from modules.market.pumpfun import get_pumpfun_client
+from modules.market.pumpportal import LaunchStream, get_launch_stream
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,10 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             name="Launch Sniper",
             strategy="new_launch_sniper",
             description=(
-                "Buys brand-new pump.fun launches with early traction, "
-                "flow-confirmed via Helius (real buys behind the move)"
+                "Snipes pump.fun launches the moment the live stream pushes "
+                "them — flow-confirmed via Helius (real buys behind the move)"
             ),
-            interval_s=settings.bots_interval_seconds,
+            interval_s=settings.bots_sniper_interval_seconds,
             usd_per_trade=usd,
             max_open_positions=3,
             take_profit_pct=40.0,
@@ -98,8 +99,14 @@ class BotManager:
         pumpfun = get_pumpfun_client(settings)
         market = get_market_manager(settings)
         helius = get_helius_client(settings)  # flow gate; inactive without a key
+        # Real-time launch stream: event-driven entries + live trade marks.
+        self._stream: LaunchStream | None = (
+            get_launch_stream(settings) if settings.pumpportal_enabled else None
+        )
         strategies = {
-            "new_launch_sniper": NewLaunchSniper(pumpfun, market, helius),
+            "new_launch_sniper": NewLaunchSniper(
+                pumpfun, market, helius, stream=self._stream
+            ),
             "graduation_momentum": GraduationMomentum(pumpfun, market),
             "trend_scalper": TrendScalper(pumpfun, market),
         }
@@ -113,6 +120,10 @@ class BotManager:
     # -- fleet control -----------------------------------------------------
 
     def start_all(self) -> None:
+        if self._stream is not None:
+            self._stream.start()
+            # New launch event -> the sniper evaluates immediately.
+            self._stream.add_listener(self._runners["sniper"].request_tick)
         for runner in self._runners.values():
             runner.start()
 

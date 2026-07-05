@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     bots_enabled: bool = True  # build the fleet + expose /bots
     bots_autostart: bool = False  # start every bot loop at app boot
     bots_interval_seconds: float = 20.0  # tick cadence per bot
+    bots_sniper_interval_seconds: float = 5.0  # sniper's faster fallback cadence
+    # Real-time pump.fun launch stream (PumpPortal WS); false = REST-only
+    pumpportal_enabled: bool = True
     bots_usd_per_trade: float = 50.0  # virtual position size
     bots_db_path: str = "data/paper_bots.db"  # bot ledger, relative to backend/
 

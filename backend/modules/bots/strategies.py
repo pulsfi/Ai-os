@@ -22,6 +22,7 @@ from core.exceptions import AppError
 from modules.market import MarketManager
 from modules.market.helius import HeliusClient
 from modules.market.pumpfun import PumpCoin, PumpFunClient
+from modules.market.pumpportal import LaunchStream
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,9 @@ class Strategy(ABC):
             return None
         return _pump_price(coin)
 
+    async def on_position_closed(self, mint: str) -> None:
+        """Hook: the runner closed a position in this mint (default no-op)."""
+
 
 class NewLaunchSniper(Strategy):
     """Buys brand-new pump.fun launches that show immediate traction.
@@ -89,6 +93,7 @@ class NewLaunchSniper(Strategy):
         pumpfun: PumpFunClient,
         market: MarketManager,
         helius: HeliusClient | None = None,
+        stream: LaunchStream | None = None,
         max_age_s: float = 180.0,
         min_mcap_usd: float = 6_000.0,
         max_mcap_usd: float = 60_000.0,
@@ -98,12 +103,24 @@ class NewLaunchSniper(Strategy):
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius
+        self._stream = stream
         self._max_age_s = max_age_s
         self._min_mcap = min_mcap_usd
         self._max_mcap = max_mcap_usd
         self._min_flow_swaps = min_flow_swaps
         self._min_flow_wallets = min_flow_wallets
         self._min_buy_ratio = min_buy_ratio_pct
+
+    async def _sol_usd(self) -> float | None:
+        """SOL/USD from the cached watchlist (30s TTL) for mcapSol -> USD."""
+        try:
+            tokens = await self._market.get_watchlist()
+        except AppError:
+            return None
+        for t in tokens:
+            if (t.symbol or "").upper() == "SOL":
+                return t.price_usd
+        return None
 
     async def _flow_note(self, mint: str) -> str | None:
         """Flow-confirmation verdict: a note when confirmed, None to skip.
@@ -129,40 +146,108 @@ class NewLaunchSniper(Strategy):
             f"({activity.buys}B/{activity.sells}S, {activity.unique_wallets} wallets)"
         )
 
-    async def find_entries(self, held_mints: set[str], slots: int) -> list[EntrySignal]:
-        coins = await self._pumpfun.get_new_coins(limit=30)
-        now = datetime.now(timezone.utc)
+    async def _stream_candidates(
+        self, held_mints: set[str], slots: int
+    ) -> list[EntrySignal]:
+        """Fast path: launches pushed by the live stream (no REST latency).
+
+        The stream carries no reply counts, so the flow gate is the
+        traction check here — real buys or no entry.
+        """
+        if self._stream is None:
+            return []
+        events = self._stream.recent(self._max_age_s)
+        if not events:
+            return []
+        sol_usd = await self._sol_usd()
+        if sol_usd is None:
+            return []
+        import time as _time
+
         signals: list[EntrySignal] = []
-        for coin in coins:
+        for event in events:
             if len(signals) >= slots:
                 break
-            price = _pump_price(coin)
-            if (
-                coin.mint in held_mints
-                or coin.complete
-                or price is None
-                or coin.usd_market_cap is None
-                or not (self._min_mcap <= coin.usd_market_cap <= self._max_mcap)
-                or (now - coin.created_at).total_seconds() > self._max_age_s
-                or coin.reply_count < 1
-            ):
+            if event.mint in held_mints or event.mcap_sol is None:
                 continue
-            flow = await self._flow_note(coin.mint)
+            mcap_usd = event.mcap_sol * sol_usd
+            if not (self._min_mcap <= mcap_usd <= self._max_mcap):
+                continue
+            flow = await self._flow_note(event.mint)
             if flow is None:
-                continue  # no confirmed buying behind the move
+                continue
+            age_s = int(_time.monotonic() - event.received_at)
             signals.append(
                 EntrySignal(
-                    mint=coin.mint,
-                    symbol=coin.symbol or coin.mint[:6],
-                    price_usd=price,
+                    mint=event.mint,
+                    symbol=event.symbol or event.mint[:6],
+                    price_usd=mcap_usd / _PUMP_SUPPLY,
                     note=(
-                        f"new launch {int((now - coin.created_at).total_seconds())}s old, "
-                        f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies, "
+                        f"stream-detected {age_s}s ago, mcap ${mcap_usd:,.0f}, "
                         f"{flow} (price=mcap/1B)"
                     ),
                 )
             )
         return signals
+
+    async def find_entries(self, held_mints: set[str], slots: int) -> list[EntrySignal]:
+        # 1) Stream first — the whole point of fast sniping.
+        signals = await self._stream_candidates(held_mints, slots)
+        taken = {s.mint for s in signals} | held_mints
+
+        # 2) REST sweep fills remaining slots (also covers stream downtime).
+        if len(signals) < slots:
+            coins = await self._pumpfun.get_new_coins(limit=30)
+            now = datetime.now(timezone.utc)
+            for coin in coins:
+                if len(signals) >= slots:
+                    break
+                price = _pump_price(coin)
+                if (
+                    coin.mint in taken
+                    or coin.complete
+                    or price is None
+                    or coin.usd_market_cap is None
+                    or not (self._min_mcap <= coin.usd_market_cap <= self._max_mcap)
+                    or (now - coin.created_at).total_seconds() > self._max_age_s
+                    or coin.reply_count < 1
+                ):
+                    continue
+                flow = await self._flow_note(coin.mint)
+                if flow is None:
+                    continue  # no confirmed buying behind the move
+                signals.append(
+                    EntrySignal(
+                        mint=coin.mint,
+                        symbol=coin.symbol or coin.mint[:6],
+                        price_usd=price,
+                        note=(
+                            f"new launch {int((now - coin.created_at).total_seconds())}s old, "
+                            f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies, "
+                            f"{flow} (price=mcap/1B)"
+                        ),
+                    )
+                )
+
+        # Live trade marks for everything we're about to hold.
+        if self._stream is not None:
+            for s in signals:
+                await self._stream.watch(s.mint)
+        return signals
+
+    async def current_price(self, mint: str) -> float | None:
+        """Streamed trade mark first (sub-second fresh), REST fallback."""
+        if self._stream is not None:
+            mcap_sol = self._stream.latest_mcap_sol(mint)
+            if mcap_sol is not None:
+                sol_usd = await self._sol_usd()
+                if sol_usd is not None:
+                    return mcap_sol * sol_usd / _PUMP_SUPPLY
+        return await super().current_price(mint)
+
+    async def on_position_closed(self, mint: str) -> None:
+        if self._stream is not None:
+            await self._stream.unwatch(mint)
 
 
 class GraduationMomentum(Strategy):
