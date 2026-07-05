@@ -381,3 +381,39 @@ export const tokenActivitySchema = z.object({
 });
 
 export type TokenActivity = z.infer<typeof tokenActivitySchema>;
+
+// --- execution layer (Stage 5; ships disarmed) ------------------------------
+
+export const riskLimitsSchema = z.object({
+  max_position_usd: z.number(),
+  daily_loss_limit_usd: z.number(),
+  max_concurrent_positions: z.number(),
+  max_slippage_bps: z.number(),
+});
+
+export const executionStatusSchema = z.object({
+  armed: z.boolean(),
+  mode: z.string(),
+  kill_switch: z.boolean(),
+  live_available: z.boolean(),
+  limits: riskLimitsSchema,
+  realized_pnl_today_usd: z.number(),
+  reason: z.string(),
+});
+
+export type ExecutionStatus = z.infer<typeof executionStatusSchema>;
+
+export const readinessCriterionSchema = z.object({
+  name: z.string(),
+  target: z.string(),
+  actual: z.string(),
+  passed: z.boolean(),
+});
+
+export const goLiveReadinessSchema = z.object({
+  ready: z.boolean(),
+  criteria: z.array(readinessCriterionSchema),
+  summary: z.string(),
+});
+
+export type GoLiveReadiness = z.infer<typeof goLiveReadinessSchema>;

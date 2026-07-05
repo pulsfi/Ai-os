@@ -21,6 +21,7 @@ from database.redis_client import get_redis
 from modules.agents import AgentsService, get_agents_service
 from modules.bots import BotManager, get_bot_manager
 from modules.chat import ChatService, get_chat_service
+from modules.execution import DryRunExecutor, RiskEngine, get_executor, get_risk_engine
 from modules.market import MarketManager, get_market_manager
 from modules.market.helius import HeliusClient, get_helius_client
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
@@ -89,6 +90,16 @@ def get_vault(settings: SettingsDep) -> VaultService:
     return get_vault_service(settings)
 
 
+def get_risk(settings: SettingsDep) -> RiskEngine:
+    """Provide the execution risk engine (limits + kill switch)."""
+    return get_risk_engine(settings)
+
+
+def get_exec(settings: SettingsDep) -> DryRunExecutor:
+    """Provide the dry-run executor (real quotes, no signing)."""
+    return get_executor(settings, get_risk_engine(settings))
+
+
 def get_helius(settings: SettingsDep) -> HeliusClient:
     """Provide the Helius Enhanced Transactions client (key-gated)."""
     return get_helius_client(settings)
@@ -106,3 +117,5 @@ PaperTradingDep = Annotated[PaperTradingService, Depends(get_paper_trading)]
 BotManagerDep = Annotated[BotManager, Depends(get_bots)]
 VaultServiceDep = Annotated[VaultService, Depends(get_vault)]
 HeliusDep = Annotated[HeliusClient, Depends(get_helius)]
+RiskEngineDep = Annotated[RiskEngine, Depends(get_risk)]
+ExecutorDep = Annotated[DryRunExecutor, Depends(get_exec)]

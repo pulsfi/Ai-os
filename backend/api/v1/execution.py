@@ -1,0 +1,72 @@
+"""Execution endpoints (Stage 5) — status, readiness, kill switch, dry-run.
+
+There is deliberately NO endpoint that arms live trading or sends a real
+order. Arming is env-only (EXECUTION_ARMED), and even then the executor
+is dry-run. The kill switch can only HALT execution, never start it.
+"""
+
+from fastapi import APIRouter
+
+from core.dependencies import (
+    BotManagerDep,
+    ExecutorDep,
+    RiskEngineDep,
+    SettingsDep,
+)
+from models.schemas.execution import (
+    ExecutionMode,
+    ExecutionStatus,
+    GoLiveReadiness,
+    OrderRequest,
+    OrderResult,
+)
+from modules.execution import evaluate_readiness
+
+router = APIRouter()
+
+
+@router.get("/status", response_model=ExecutionStatus)
+async def execution_status(risk: RiskEngineDep, settings: SettingsDep) -> ExecutionStatus:
+    """Current execution state — armed?, mode, limits, kill switch, day PnL."""
+    armed = risk.armed and not risk.kill_switch
+    return ExecutionStatus(
+        armed=risk.armed,
+        mode=ExecutionMode(settings.execution_mode)
+        if settings.execution_mode in (m.value for m in ExecutionMode)
+        else ExecutionMode.DRY_RUN,
+        kill_switch=risk.kill_switch,
+        live_available=False,  # the live path is an intentional stub
+        limits=risk.limits,
+        realized_pnl_today_usd=risk.realized_today,
+        reason=(
+            "Kill switch engaged — execution halted."
+            if risk.kill_switch
+            else "Disarmed — paper/dry-run only. Set EXECUTION_ARMED to enable dry-run gating."
+            if not risk.armed
+            else "Armed for DRY-RUN only. No live path exists; nothing real is sent."
+        ),
+    )
+
+
+@router.get("/readiness", response_model=GoLiveReadiness)
+async def go_live_readiness(bots: BotManagerDep, settings: SettingsDep) -> GoLiveReadiness:
+    """Scorecard: does the paper record justify real money yet?"""
+    fleet = next((p for p in bots.performance() if p.bot_id == "fleet"), None)
+    return evaluate_readiness(fleet, bots.first_entry_ts(), settings)
+
+
+@router.post("/kill/{state}", response_model=ExecutionStatus)
+async def set_kill_switch(
+    state: str, risk: RiskEngineDep, settings: SettingsDep
+) -> ExecutionStatus:
+    """Engage ('on') or release ('off') the global halt. Safe either way —
+    it can only stop execution, never begin it."""
+    risk.set_kill_switch(state == "on")
+    return await execution_status(risk, settings)
+
+
+@router.post("/dry-run", response_model=OrderResult)
+async def dry_run_order(order: OrderRequest, executor: ExecutorDep) -> OrderResult:
+    """Route an intended order through the risk engine + a REAL Jupiter
+    quote, and record a simulated fill. Signs nothing, sends nothing."""
+    return await executor.execute(order)

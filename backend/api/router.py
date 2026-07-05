@@ -6,7 +6,19 @@ include it here. Nothing else changes (Open/Closed principle).
 
 from fastapi import APIRouter
 
-from api.v1 import agents, bots, chat, health, market, solana, system, trading, vault, ws
+from api.v1 import (
+    agents,
+    bots,
+    chat,
+    execution,
+    health,
+    market,
+    solana,
+    system,
+    trading,
+    vault,
+    ws,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -19,3 +31,4 @@ api_router.include_router(trading.router, prefix="/trading", tags=["trading"])
 api_router.include_router(bots.router, prefix="/bots", tags=["bots"])
 api_router.include_router(ws.router, prefix="/ws", tags=["ws"])
 api_router.include_router(vault.router, prefix="/vault", tags=["vault"])
+api_router.include_router(execution.router, prefix="/execution", tags=["execution"])

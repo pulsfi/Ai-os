@@ -169,6 +169,10 @@ class BotManager:
             self._runner(bot_id)  # 404 for unknown bots
         return self._ledger.trades(bot_id, limit)
 
+    def first_entry_ts(self) -> str | None:
+        """Earliest trade time across the fleet (drives days-of-record)."""
+        return self._ledger.first_entry_ts()
+
     def performance(self) -> list[BotPerformance]:
         """Track record per bot, plus the whole fleet as id 'fleet'.
 

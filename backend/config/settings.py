@@ -86,6 +86,21 @@ class Settings(BaseSettings):
     daily_report_enabled: bool = False  # true = write the diary automatically
     daily_report_hour_utc: int = 20  # when to write, 0-23 UTC
 
+    # --- execution layer (Stage 5) — SHIPS DISARMED, NO KEYS, NO SIGNING ---
+    # Master switch. Even when true, only the dry-run executor exists — the
+    # live path is a deliberate stub. Real money never trades from config alone.
+    execution_armed: bool = False
+    execution_mode: str = "dry_run"  # dry_run (only implemented) | live (stubbed)
+    exec_max_position_usd: float = 10.0  # hard per-order cap (start tiny)
+    exec_daily_loss_limit_usd: float = 25.0  # halt trading after this daily loss
+    exec_max_concurrent_positions: int = 2
+    exec_max_slippage_bps: int = 150  # 1.5% max slippage on quotes
+    # Go-live readiness gates (all must pass before live is justifiable).
+    golive_min_closed_trades: int = 50
+    golive_min_win_rate_pct: float = 55.0
+    golive_min_realized_pnl_usd: float = 25.0
+    golive_min_days: float = 7.0
+
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
     market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token

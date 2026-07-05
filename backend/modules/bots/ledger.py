@@ -141,6 +141,12 @@ class BotLedger:
             rows = conn.execute(query, params).fetchall()
         return [BotTrade(**dict(r)) for r in rows]
 
+    def first_entry_ts(self) -> str | None:
+        """Earliest trade entry timestamp across the whole fleet (ISO)."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT MIN(entry_ts) AS t FROM bot_trades").fetchone()
+        return row["t"] if row and row["t"] else None
+
     def stats(self, bot_id: str) -> dict[str, float | int | None]:
         """open count, closed count, realized PnL, win rate for one bot."""
         with self._connect() as conn:

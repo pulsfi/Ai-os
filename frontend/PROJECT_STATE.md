@@ -344,10 +344,55 @@ Tests: 95/95 (9 new: trail lock-in + not-armed, flow accept/reject/
 fail-closed/gate-off, scheduler timing math, write_now). Verified live:
 all bots running with trail configs, scheduler started at 20:00 UTC.
 
-## ⏭️ Next — Milestone 10
+## ✅ Milestone 12 — Stage 5 SAFE FOUNDATION (done 2026-07-05)
 
-- Let the flow-gated + trailing fleet build a multi-day record; then
-  strategy review round 2 (sniper mcap band, trend take-profit).
-- Bot config editing from the Settings page.
-- Stage 5 (live execution) decision waits for a profitable multi-week
-  paper record — wallet integration + hard limits when it's justified.
+Live-execution groundwork, built the responsible way. SHIPS DISARMED.
+No wallet, no private key, no transaction signing anywhere in the tree.
+
+### Backend (`modules/execution/`)
+
+- **RiskEngine** — the gate every order passes: per-order size cap,
+  daily-loss auto-halt (resets at UTC midnight), max concurrent
+  positions, and a global kill switch that can only HALT. Denials are
+  the default; disarmed = everything blocked.
+- **DryRunExecutor** — fetches a REAL Jupiter quote for the intended
+  swap (exercises the whole route), then records a SIMULATED fill.
+  Builds/signs/sends nothing. Survives quote failure honestly.
+- **LiveExecutor** — deliberate stub; raises `LiveExecutionUnavailable`
+  with the exact steps building it responsibly requires. Even
+  `EXECUTION_MODE=live` returns the dry-run executor (safety over config).
+- **Readiness scorecard** — go-live gates: ≥50 closed trades, ≥55% win
+  rate, ≥$25 realized PnL, ≥7 days of record. All must pass.
+- API: `GET /execution/status`, `/execution/readiness`,
+  `POST /execution/kill/{on|off}`, `POST /execution/dry-run`. No arm
+  endpoint — arming is env-only (`EXECUTION_ARMED`, default false).
+- Tests: 118/118 (16 new: disarmed-by-default, caps, loss-halt, kill
+  switch, dry-run w/ real+failed quote, live unavailable, readiness).
+
+### Frontend
+
+- **ExecutionPanel** on the Trading page: armed/disarmed/halted state,
+  hard risk limits, the go-live scorecard (per-gate pass/fail), and a
+  kill switch. No "go live" button — that's an operator env decision.
+
+### Verified live
+
+- Status: `armed=false, live_available=false, mode=dry_run`.
+- Readiness: 3/4 gates green, held by the 7-day track-length gate —
+  the system correctly refuses to call itself ready.
+- Kill switch on/off round-trip confirmed.
+
+> NOTE on the paper numbers: current paper win rate / PnL read very high
+> because pump.fun positions are priced by the mcap/1B proxy, which
+> exaggerates % moves on volatile launches. That inflation is exactly
+> why the readiness gate also requires days of record and why real
+> dry-run Jupiter quotes now feed the eventual live path — paper PnL is
+> not trusted at face value.
+
+## ⏭️ Next
+
+- Let the record mature past 7 days; re-check readiness with the
+  inflation caveat in mind (consider a realized-PnL sanity filter).
+- When (and only when) all gates are green: build the live path
+  deliberately — wallet from a secure store, tx build/sign/send with
+  priority fees, confirmation + reconciliation, tiny-size ramp.

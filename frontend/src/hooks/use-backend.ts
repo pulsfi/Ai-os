@@ -11,6 +11,7 @@ import {
   agentsService,
   botsService,
   chatService,
+  executionService,
   healthService,
   marketService,
   pumpfunService,
@@ -166,6 +167,33 @@ export function usePaperTrades(limit = 50) {
     queryKey: qk.paperTrades,
     queryFn: () => tradingService.getTrades(limit),
     refetchInterval: 30_000,
+  });
+}
+
+export function useExecutionStatus() {
+  return useQuery({
+    queryKey: ["execution", "status"] as const,
+    queryFn: executionService.status,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useGoLiveReadiness() {
+  return useQuery({
+    queryKey: ["execution", "readiness"] as const,
+    queryFn: executionService.readiness,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Global kill switch — refreshes execution status on toggle. */
+export function useKillSwitch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) => executionService.setKill(on),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
   });
 }
 

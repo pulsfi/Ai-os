@@ -5,6 +5,7 @@ import { FadeIn } from "@/components/motion/fade-in";
 import { ExecutionLog } from "@/components/terminal-ui/execution-log";
 import { TickerBar } from "@/components/terminal-ui/ticker-bar";
 import { BotFleetCard } from "@/components/trading/bot-fleet-card";
+import { ExecutionPanel } from "@/components/trading/execution-panel";
 import { PerformanceCard } from "@/components/trading/performance-card";
 import { PumpFunCard } from "@/components/trading/pumpfun-card";
 import { TokenInspector } from "@/components/trading/token-inspector";
@@ -46,6 +47,9 @@ export default function TradingPage() {
         </FadeIn>
         <FadeIn delay={0.09} className="lg:col-span-2">
           <PerformanceCard />
+        </FadeIn>
+        <FadeIn delay={0.1} className="lg:col-span-2">
+          <ExecutionPanel />
         </FadeIn>
         <FadeIn delay={0.12}>
           <PumpFunCard />

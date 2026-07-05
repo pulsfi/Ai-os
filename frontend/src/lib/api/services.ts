@@ -43,8 +43,12 @@ import {
   type PumpCoin,
   type SystemInfo,
   dailyReportResultSchema,
+  executionStatusSchema,
+  goLiveReadinessSchema,
   tokenActivitySchema,
   type DailyReportResult,
+  type ExecutionStatus,
+  type GoLiveReadiness,
   type TokenActivity,
   type TokenAuthorities,
   type TokenInfo,
@@ -154,6 +158,20 @@ export const botsService = {
       undefined,
       botControlResultSchema,
     ),
+};
+
+export const executionService = {
+  /** GET /execution/status — armed?, mode, limits, kill switch, day PnL. */
+  status: (): Promise<ExecutionStatus> =>
+    getValidated("/execution/status", executionStatusSchema),
+
+  /** GET /execution/readiness — go-live scorecard vs the paper record. */
+  readiness: (): Promise<GoLiveReadiness> =>
+    getValidated("/execution/readiness", goLiveReadinessSchema),
+
+  /** POST /execution/kill/{on|off} — global halt (can only stop execution). */
+  setKill: (on: boolean): Promise<ExecutionStatus> =>
+    postValidated(`/execution/kill/${on ? "on" : "off"}`, undefined, executionStatusSchema),
 };
 
 export const chatService = {

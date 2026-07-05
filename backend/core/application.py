@@ -20,6 +20,7 @@ from database.engine import dispose_engine
 from database.redis_client import close_redis
 from modules.bots import close_bot_manager, get_bot_manager
 from modules.chat import close_chat_service
+from modules.execution import close_executor
 from modules.market import close_market_manager, get_market_manager
 from modules.market.helius import close_helius_client
 from modules.market.pumpfun import close_pumpfun_client
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_launch_stream()
     await close_helius_client()
     await close_chat_service()
+    await close_executor()
     await dispose_engine()
     await close_redis()
     await close_rpc_client()
