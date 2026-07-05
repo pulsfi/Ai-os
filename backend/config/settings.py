@@ -106,6 +106,9 @@ class Settings(BaseSettings):
 
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped
+    # Birdeye's free tier throttles harder than the others (429s); give it
+    # a longer per-call gap so it contributes reliably instead of erroring.
+    birdeye_min_interval_seconds: float = 2.5
     market_cache_ttl_seconds: int = 30  # Redis/mem cache expiry per token
     market_refresh_enabled: bool = False  # background scheduler on/off
     market_refresh_seconds: int = 300  # scheduler interval

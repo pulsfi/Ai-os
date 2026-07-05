@@ -100,5 +100,8 @@ def build_providers(settings, http: httpx.AsyncClient) -> list[MarketProvider]: 
         DexScreenerProvider(http, interval),
         CoinGeckoProvider(http, interval),
         JupiterProvider(http, interval),
-        BirdeyeProvider(http, settings.birdeye_api_key, interval),
+        # Birdeye free tier is rate-limited harder — pace it slower.
+        BirdeyeProvider(
+            http, settings.birdeye_api_key, settings.birdeye_min_interval_seconds
+        ),
     ]
