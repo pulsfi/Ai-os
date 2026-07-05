@@ -129,6 +129,18 @@ class BotLedger:
             rows = conn.execute(query, params).fetchall()
         return [BotTrade(**dict(r)) for r in rows]
 
+    def closed_trades_chrono(self, bot_id: str | None = None) -> list[BotTrade]:
+        """Closed trades oldest-first — the input to an equity curve."""
+        query = "SELECT * FROM bot_trades WHERE status = 'closed'"
+        params: list[object] = []
+        if bot_id is not None:
+            query += " AND bot_id = ?"
+            params.append(bot_id)
+        query += " ORDER BY exit_ts, id"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [BotTrade(**dict(r)) for r in rows]
+
     def stats(self, bot_id: str) -> dict[str, float | int | None]:
         """open count, closed count, realized PnL, win rate for one bot."""
         with self._connect() as conn:

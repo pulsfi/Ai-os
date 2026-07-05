@@ -10,7 +10,12 @@ from typing import Literal
 from fastapi import APIRouter, Query
 
 from core.dependencies import BotManagerDep
-from models.schemas.bots import BotControlResult, BotStatus, BotTrade
+from models.schemas.bots import (
+    BotControlResult,
+    BotPerformance,
+    BotStatus,
+    BotTrade,
+)
 
 router = APIRouter()
 
@@ -19,6 +24,14 @@ router = APIRouter()
 async def list_bots(bots: BotManagerDep) -> list[BotStatus]:
     """Every bot: config, runtime state, and ledger stats."""
     return bots.statuses()
+
+
+@router.get("/performance", response_model=list[BotPerformance])
+async def performance(bots: BotManagerDep) -> list[BotPerformance]:
+    """Track record per bot + the whole fleet: equity curve of REALIZED
+    PnL, win rate, avg/best/worst trade. The evidence the Stage 5 gate
+    will be judged on."""
+    return bots.performance()
 
 
 @router.get("/trades", response_model=list[BotTrade])

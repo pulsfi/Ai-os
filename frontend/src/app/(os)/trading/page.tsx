@@ -4,6 +4,7 @@ import { WatchlistCard } from "@/components/dashboard/watchlist-card";
 import { FadeIn } from "@/components/motion/fade-in";
 import { BotFleetCard } from "@/components/trading/bot-fleet-card";
 import { PaperLedgerCard } from "@/components/trading/paper-ledger-card";
+import { PerformanceCard } from "@/components/trading/performance-card";
 import { PumpFunCard } from "@/components/trading/pumpfun-card";
 import { TokenInspector } from "@/components/trading/token-inspector";
 import { TrendingCard } from "@/components/trading/trending-card";
@@ -33,6 +34,9 @@ export default function TradingPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <FadeIn className="lg:col-span-2">
           <BotFleetCard />
+        </FadeIn>
+        <FadeIn delay={0.03} className="lg:col-span-2">
+          <PerformanceCard />
         </FadeIn>
         <FadeIn delay={0.05} className="lg:col-span-2">
           <PaperLedgerCard />

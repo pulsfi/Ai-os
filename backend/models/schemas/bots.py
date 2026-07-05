@@ -73,3 +73,26 @@ class BotControlResult(BaseModel):
     accepted: bool
     state: BotState
     detail: str
+
+
+class EquityPoint(BaseModel):
+    """One step of the cumulative realized-PnL curve (a closed trade)."""
+
+    ts: str  # exit timestamp of the trade that moved equity
+    equity_usd: float  # cumulative realized PnL after this trade
+
+
+class BotPerformance(BaseModel):
+    """Track record of one bot (or the whole fleet as id 'fleet')."""
+
+    bot_id: str
+    name: str
+    closed_trades: int = 0
+    wins: int = 0
+    losses: int = 0
+    win_rate_pct: float | None = None
+    realized_pnl_usd: float = 0.0
+    avg_pnl_pct: float | None = None
+    best_trade_pct: float | None = None
+    worst_trade_pct: float | None = None
+    curve: list[EquityPoint] = []

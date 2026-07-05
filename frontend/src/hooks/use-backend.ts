@@ -37,6 +37,7 @@ export const qk = {
   paperTrades: ["trading", "trades"] as const,
   bots: ["bots"] as const,
   botTrades: (botId: string | null) => ["bots", "trades", botId ?? "all"] as const,
+  botPerformance: ["bots", "performance"] as const,
   agents: ["agents"] as const,
   agent: (name: string) => ["agents", name] as const,
   agentReports: (name: string) => ["agents", name, "reports"] as const,
@@ -168,6 +169,15 @@ export function useBotTrades(botId: string | null, limit = 50) {
     queryFn: () =>
       botId === null ? botsService.allTrades(limit) : botsService.trades(botId, limit),
     refetchInterval: 15_000,
+  });
+}
+
+/** Track record: equity curves + per-strategy comparison. */
+export function useBotPerformance() {
+  return useQuery({
+    queryKey: qk.botPerformance,
+    queryFn: botsService.performance,
+    refetchInterval: 30_000,
   });
 }
 

@@ -38,7 +38,8 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
-import { useBots, useBotControl, useBotTrades } from "@/hooks/use-backend";
+import { useBotControl, useBotTrades } from "@/hooks/use-backend";
+import { useFleetLive } from "@/hooks/use-fleet-live";
 import { formatPct, formatPrice, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { BotStatus } from "@/lib/api/schemas";
@@ -66,7 +67,7 @@ function StateBadge({ state }: { state: BotStatus["state"] }) {
 }
 
 export function BotFleetCard() {
-  const bots = useBots();
+  const bots = useFleetLive();
   const control = useBotControl();
   const [logsFor, setLogsFor] = React.useState<string | null>(null);
 
@@ -94,15 +95,26 @@ export function BotFleetCard() {
             </CardTitle>
             <CardDescription>
               Live multi-bot runtime — paper mode (virtual ${""}
-              {bots.data?.[0]?.config.usd_per_trade ?? 50} per trade), real controls
+              {bots.bots?.[0]?.config.usd_per_trade ?? 50} per trade), real controls
             </CardDescription>
           </div>
-          {bots.data && (
-            <Badge variant="outline" className="font-mono">
-              {bots.data.filter((b) => b.state === "running").length}/{bots.data.length}{" "}
-              running
+          <div className="flex items-center gap-2">
+            <Badge variant={bots.live ? "default" : "secondary"} className="gap-1.5">
+              {bots.live && (
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
+                  <span className="relative inline-flex size-2 rounded-full bg-current" />
+                </span>
+              )}
+              {bots.live ? "live socket" : "polling"}
             </Badge>
-          )}
+            {bots.bots && (
+              <Badge variant="outline" className="font-mono">
+                {bots.bots.filter((b) => b.state === "running").length}/{bots.bots.length}{" "}
+                running
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -114,11 +126,11 @@ export function BotFleetCard() {
           </div>
         )}
         {bots.isError && (
-          <WidgetError error={bots.error} onRetry={() => void bots.refetch()} />
+          <WidgetError error={bots.error} onRetry={() => bots.refetch()} />
         )}
-        {bots.data && (
+        {bots.bots && (
           <div className="grid gap-3 lg:grid-cols-3">
-            {bots.data.map((bot) => (
+            {bots.bots.map((bot) => (
               <div key={bot.config.id} className="flex flex-col rounded-xl border p-4">
                 <div className="mb-1 flex items-start justify-between gap-2">
                   <p className="text-sm font-semibold">{bot.config.name}</p>

@@ -14,6 +14,7 @@ import {
   healthReportSchema,
   historyPointSchema,
   botControlResultSchema,
+  botPerformanceSchema,
   botStatusSchema,
   botTradeSchema,
   marketStatusSchema,
@@ -33,6 +34,7 @@ import {
   type HealthReport,
   type HistoryPoint,
   type BotControlResult,
+  type BotPerformance,
   type BotStatus,
   type BotTrade,
   type MarketStatus,
@@ -117,6 +119,10 @@ export const tradingService = {
 export const botsService = {
   /** GET /bots — the fleet: config, live state, ledger stats per bot. */
   list: (): Promise<BotStatus[]> => getValidated("/bots", z.array(botStatusSchema)),
+
+  /** GET /bots/performance — equity curves + per-strategy track record. */
+  performance: (): Promise<BotPerformance[]> =>
+    getValidated("/bots/performance", z.array(botPerformanceSchema)),
 
   /** GET /bots/trades — fleet-wide paper trade log, newest first. */
   allTrades: (limit = 50): Promise<BotTrade[]> =>

@@ -305,3 +305,35 @@ export const botControlResultSchema = z.object({
 });
 
 export type BotControlResult = z.infer<typeof botControlResultSchema>;
+
+export const equityPointSchema = z.object({
+  ts: z.string(),
+  equity_usd: z.number(),
+});
+
+export const botPerformanceSchema = z.object({
+  bot_id: z.string(),
+  name: z.string(),
+  closed_trades: z.number(),
+  wins: z.number(),
+  losses: z.number(),
+  win_rate_pct: z.number().nullable(),
+  realized_pnl_usd: z.number(),
+  avg_pnl_pct: z.number().nullable(),
+  best_trade_pct: z.number().nullable(),
+  worst_trade_pct: z.number().nullable(),
+  curve: z.array(equityPointSchema),
+});
+
+export type BotPerformance = z.infer<typeof botPerformanceSchema>;
+export type EquityPoint = z.infer<typeof equityPointSchema>;
+
+/** One frame pushed by ws://…/api/v1/ws every few seconds. */
+export const fleetSnapshotSchema = z.object({
+  type: z.literal("fleet"),
+  ts: z.string(),
+  bots: z.array(botStatusSchema),
+  trades: z.array(botTradeSchema),
+});
+
+export type FleetSnapshot = z.infer<typeof fleetSnapshotSchema>;

@@ -6,7 +6,7 @@ include it here. Nothing else changes (Open/Closed principle).
 
 from fastapi import APIRouter
 
-from api.v1 import agents, bots, chat, health, market, solana, system, trading
+from api.v1 import agents, bots, chat, health, market, solana, system, trading, ws
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -17,5 +17,6 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(trading.router, prefix="/trading", tags=["trading"])
 api_router.include_router(bots.router, prefix="/bots", tags=["bots"])
+api_router.include_router(ws.router, prefix="/ws", tags=["ws"])
 
 # TODO(api): /vault endpoints once services/vault lands (notes bridge)

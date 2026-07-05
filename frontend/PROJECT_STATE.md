@@ -224,11 +224,44 @@ no keys, no signing anywhere in the module tree (Stage 5 gate intact).
   running again. tsc + eslint clean; `next build` passes; Trading page
   renders the fleet.
 
-## ⏭️ Next — Milestone 6
+## ✅ Milestone 6 — Performance review + WebSocket live layer (done 2026-07-05)
 
-- Let the fleet run and review the paper track record (win rate per
-  strategy) — this is the evidence the Stage 5 gate needs.
+### Backend
+
+- **`GET /bots/performance`** — track record per bot + whole fleet:
+  equity curve of cumulative REALIZED PnL (closed trades only — unrealized
+  gains never flatter the chart), win rate, avg/best/worst trade.
+- **`ws://…/api/v1/ws`** — WebSocket pushing a full fleet snapshot
+  (bots + latest 20 trades) every 3s. Read-only: inbound messages are
+  ignored, controls stay on REST. `websockets` added to requirements.
+- Tests: 68/68 (3 new: chronological curve input, performance contract,
+  WS handshake + frame shape via TestClient).
+
+### Frontend
+
+- **`src/lib/ws.ts`** — typed WS client: Zod-validates every frame
+  (malformed frames dropped, never rendered), reconnects with capped
+  exponential backoff.
+- **`useFleetLive`** — WS-first fleet state with the 10s REST poll as
+  automatic fallback; the fleet card badge shows "live socket" vs
+  "polling" honestly.
+- **PerformanceCard** on the Trading page: dependency-free SVG equity
+  curve (zero-line, win/loss coloring), per-bot selector chips, and a
+  strategy comparison table (closed, W/L, win rate, PnL, avg/best/worst).
+
+### Verified live
+
+- `/bots/performance` returned the fleet's real overnight record:
+  4 closed trades, graduate 0/3 (-$2.43), trend 1/1 (+$0.32).
+- WS: two consecutive frames 3s apart with full fleet + 7 trades.
+- tsc + eslint clean; `next build` passes; Trading page renders the
+  performance card.
+
+## ⏭️ Next — Milestone 7
+
+- Let the track record accumulate; tune strategy filters from the data
+  (graduate is losing — entry at 100% progress is too late; consider
+  85–98% band).
 - Backend /vault endpoints (Memory page's remaining section).
-- WebSocket layer for live updates (replaces polling).
 - Photon integration: pending the user's API keys — no public API exists,
   so nothing is stubbed.

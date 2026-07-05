@@ -16,7 +16,14 @@ from pathlib import Path
 
 from config import Settings
 from core.exceptions import NotFoundError
-from models.schemas.bots import BotConfig, BotControlResult, BotStatus, BotTrade
+from models.schemas.bots import (
+    BotConfig,
+    BotControlResult,
+    BotPerformance,
+    BotStatus,
+    BotTrade,
+    EquityPoint,
+)
 from modules.bots.ledger import BotLedger
 from modules.bots.runner import BotRunner
 from modules.bots.strategies import (
@@ -139,6 +146,49 @@ class BotManager:
         if bot_id is not None:
             self._runner(bot_id)  # 404 for unknown bots
         return self._ledger.trades(bot_id, limit)
+
+    def performance(self) -> list[BotPerformance]:
+        """Track record per bot, plus the whole fleet as id 'fleet'.
+
+        The curve is cumulative REALIZED PnL — only closed trades move it,
+        so it never flatters the fleet with unrealized paper gains.
+        """
+        results: list[BotPerformance] = []
+        specs = [("fleet", "Whole fleet", None)] + [
+            (r.config.id, r.config.name, r.config.id) for r in self._runners.values()
+        ]
+        for perf_id, name, ledger_id in specs:
+            closed = self._ledger.closed_trades_chrono(ledger_id)
+            equity = 0.0
+            curve: list[EquityPoint] = []
+            pcts: list[float] = []
+            wins = 0
+            for t in closed:
+                equity += t.pnl_usd or 0.0
+                curve.append(
+                    EquityPoint(ts=t.exit_ts or t.entry_ts, equity_usd=round(equity, 4))
+                )
+                if t.pnl_pct is not None:
+                    pcts.append(t.pnl_pct)
+                if (t.pnl_usd or 0.0) > 0:
+                    wins += 1
+            n = len(closed)
+            results.append(
+                BotPerformance(
+                    bot_id=perf_id,
+                    name=name,
+                    closed_trades=n,
+                    wins=wins,
+                    losses=n - wins,
+                    win_rate_pct=round(wins / n * 100, 1) if n else None,
+                    realized_pnl_usd=round(equity, 2),
+                    avg_pnl_pct=round(sum(pcts) / len(pcts), 2) if pcts else None,
+                    best_trade_pct=max(pcts) if pcts else None,
+                    worst_trade_pct=min(pcts) if pcts else None,
+                    curve=curve,
+                )
+            )
+        return results
 
 
 _manager: BotManager | None = None
