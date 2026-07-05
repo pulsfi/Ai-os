@@ -16,5 +16,16 @@ TODO(agents): explicit gate — Execution Agent stays read-only until the
 """
 
 from modules.agents.agents_service import AgentsService, get_agents_service
+from modules.agents.runtime import (
+    AgentRuntime,
+    close_agent_runtime,
+    get_agent_runtime,
+)
 
-__all__ = ["AgentsService", "get_agents_service"]
+__all__ = [
+    "AgentRuntime",
+    "AgentsService",
+    "close_agent_runtime",
+    "get_agent_runtime",
+    "get_agents_service",
+]

@@ -17,6 +17,8 @@ import {
   RotateCcw,
   ScrollText,
   Square,
+  TriangleAlert,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,18 +42,43 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
-import { useAgent, useAgentControl, useAgentReports, useAgents } from "@/hooks/use-backend";
+import {
+  useAgent,
+  useAgentActivity,
+  useAgentControl,
+  useAgentReports,
+  useAgentRuntime,
+  useAgents,
+} from "@/hooks/use-backend";
 import { timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-function statusVariant(status: string): "default" | "secondary" | "outline" {
-  if (status === "active") return "default";
-  if (status === "standby" || status === "paused") return "secondary";
-  return "outline";
+function RuntimeBadge({ state }: { state: string }) {
+  if (state === "running") {
+    return (
+      <Badge className="gap-1.5">
+        <span className="relative flex size-2">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
+          <span className="relative inline-flex size-2 rounded-full bg-current" />
+        </span>
+        live
+      </Badge>
+    );
+  }
+  if (state === "error") {
+    return (
+      <Badge variant="destructive" className="gap-1">
+        <TriangleAlert className="size-3" /> error
+      </Badge>
+    );
+  }
+  if (state === "stopped") return <Badge variant="secondary">stopped</Badge>;
+  return <Badge variant="outline">idle</Badge>;
 }
 
 export function AgentGrid() {
   const agents = useAgents();
+  const runtime = useAgentRuntime();
   const control = useAgentControl();
   const [selected, setSelected] = React.useState<string | null>(null);
 
@@ -60,12 +87,8 @@ export function AgentGrid() {
       { name, action },
       {
         onSuccess: (res) => {
-          if (res.accepted) {
-            toast.success(`${res.agent}: ${res.action} accepted`);
-          } else {
-            // Honest gate: the backend explains why controls are inert.
-            toast.info(res.reason, { duration: 8000 });
-          }
+          const verb = res.accepted ? "success" : "info";
+          toast[verb](`${res.agent}: ${res.reason} (${res.runtime_state})`);
         },
         onError: (err) =>
           toast.error(err instanceof Error ? err.message : "Control request failed"),
@@ -89,6 +112,24 @@ export function AgentGrid() {
 
   return (
     <>
+      {/* live pipeline banner */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card/60 px-4 py-3">
+        <div className="flex items-center gap-2 text-sm">
+          <Workflow className="size-4 text-primary" />
+          <span className="font-medium">7-agent pipeline</span>
+          {runtime.data && (
+            <RuntimeBadge state={runtime.data.running ? "running" : "stopped"} />
+          )}
+        </div>
+        {runtime.data && (
+          <span className="font-mono text-xs text-muted-foreground">
+            {runtime.data.cycles} cycles · every {runtime.data.cycle_seconds}s ·{" "}
+            {runtime.data.agents.filter((a) => a.enabled).length}/
+            {runtime.data.agents.length} active
+          </span>
+        )}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {agents.data?.map((agent) => (
           <Card key={agent.name} className="flex flex-col">
@@ -98,7 +139,7 @@ export function AgentGrid() {
                   <div
                     className={cn(
                       "flex size-8 items-center justify-center rounded-lg",
-                      agent.status === "active"
+                      agent.runtime_state === "running"
                         ? "bg-primary/15 text-primary"
                         : "bg-muted text-muted-foreground",
                     )}
@@ -107,24 +148,37 @@ export function AgentGrid() {
                   </div>
                   <CardTitle className="text-base">{agent.name}</CardTitle>
                 </div>
-                <Badge variant={statusVariant(agent.status)}>{agent.status}</Badge>
+                <RuntimeBadge state={agent.runtime_state} />
               </div>
               <CardDescription className="line-clamp-2 min-h-10">
                 {agent.description || "No description in the vault yet."}
               </CardDescription>
             </CardHeader>
             <CardContent className="mt-auto space-y-3">
+              {/* what the agent is doing right now (live) */}
+              <div className="min-h-9 rounded-lg bg-muted/40 px-2.5 py-1.5 text-xs">
+                {agent.last_summary ? (
+                  <span className={cn(agent.last_ok === false && "text-destructive")}>
+                    {agent.last_summary}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Waiting for first cycle…</span>
+                )}
+              </div>
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1">
-                  <FileText className="size-3.5" />
-                  {agent.report_count} report{agent.report_count === 1 ? "" : "s"}
+                  <Activity className="size-3.5" />
+                  {agent.cycles} runs
                 </span>
-                {agent.last_activity && (
+                {agent.last_run && (
                   <span className="inline-flex items-center gap-1">
-                    <Activity className="size-3.5" />
-                    {timeAgo(agent.last_activity)}
+                    {timeAgo(agent.last_run)}
                   </span>
                 )}
+                <span className="inline-flex items-center gap-1">
+                  <FileText className="size-3.5" />
+                  {agent.report_count}
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Button
@@ -176,6 +230,7 @@ export function AgentGrid() {
 function AgentDetailSheet({ name, onClose }: { name: string | null; onClose: () => void }) {
   const detail = useAgent(name ?? "");
   const reports = useAgentReports(name ?? "");
+  const activity = useAgentActivity(name ?? "");
 
   return (
     <Sheet open={name !== null} onOpenChange={(open) => !open && onClose()}>
@@ -189,6 +244,37 @@ function AgentDetailSheet({ name, onClose }: { name: string | null; onClose: () 
         <ScrollArea className="h-[calc(100dvh-7rem)] pr-4">
           <div className="space-y-5 px-4 pb-8">
             {detail.isLoading && <Skeleton className="h-24 rounded-lg" />}
+            {/* live pipeline activity (Stage 6) */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Live activity</h4>
+              {activity.isLoading && <Skeleton className="h-20 rounded-lg" />}
+              {activity.data?.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No pipeline output yet — the agent runs on the next cycle.
+                </p>
+              )}
+              <div className="space-y-1.5">
+                {activity.data?.map((t, i) => (
+                  <div
+                    key={`${t.ts}-${i}`}
+                    className="rounded-lg border p-2.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={cn(!t.ok && "text-destructive")}>{t.summary}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                        {timeAgo(t.ts)}
+                      </span>
+                    </div>
+                    {t.detail && (
+                      <p className="mt-0.5 text-muted-foreground">{t.detail}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
             {detail.data && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium">Mission</h4>

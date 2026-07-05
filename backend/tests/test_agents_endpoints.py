@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from config import Settings
 from core.application import create_app
-from core.dependencies import get_agents
+from core.dependencies import get_agents, get_runtime
 from modules.agents import AgentsService
 
 _HUB = """---
@@ -60,8 +60,48 @@ def vault_client(tmp_path, settings: Settings) -> TestClient:
     vault_settings = Settings(_env_file=None, vault_path=tmp_path, log_level="WARNING")
     app = create_app(settings)
     app.dependency_overrides[get_agents] = lambda: AgentsService(vault_settings)
+    app.dependency_overrides[get_runtime] = lambda: _StubRuntime()
     with TestClient(app) as client:
         yield client
+
+
+class _StubRuntime:
+    """Isolated stand-in for the AgentRuntime (no real module singletons)."""
+
+    def __init__(self) -> None:
+        self._names = {"Research Agent", "Strategy Agent", "Documentation Agent"}
+        self._enabled = {n: True for n in self._names}
+
+    def has(self, name: str) -> bool:
+        return name in self._names
+
+    def agent_runtime(self, name: str):
+        from models.schemas.agents import RuntimeAgentStatus
+
+        if name not in self._names:
+            return None
+        enabled = self._enabled[name]
+        return RuntimeAgentStatus(
+            name=name,
+            enabled=enabled,
+            runtime_state="running" if enabled else "stopped",
+            runs=3,
+            last_run="2026-07-05T00:00:00+00:00",
+            last_summary="did real work",
+            last_ok=True,
+        )
+
+    def control(self, name: str, action: str):
+        if action == "stop":
+            self._enabled[name] = False
+            return True, "Agent paused.", "stopped"
+        self._enabled[name] = True
+        return True, "Agent resumed.", "running"
+
+    def recent_for(self, name: str, limit: int = 15):
+        from models.schemas.agents import AgentTick
+
+        return [AgentTick(agent=name, ts="2026-07-05T00:00:00+00:00", ok=True, summary="s")]
 
 
 def test_list_agents_pipeline_order_and_status(vault_client: TestClient) -> None:
@@ -106,15 +146,27 @@ def test_traversal_names_are_rejected(vault_client: TestClient) -> None:
     assert res.status_code == 404
 
 
-def test_control_declines_honestly(vault_client: TestClient) -> None:
-    """start/stop/restart answer with accepted=False + reason (no runtime)."""
-    for action in ("start", "stop", "restart"):
-        res = vault_client.post(f"/api/v1/agents/Research Agent/{action}")
-        assert res.status_code == 200
-        body = res.json()
-        assert body["accepted"] is False
-        assert body["action"] == action
-        assert "runtime" in body["reason"].lower()
+def test_control_changes_runtime_state(vault_client: TestClient) -> None:
+    """Stage 6: start/stop/restart really toggle the agent in the pipeline."""
+    stop = vault_client.post("/api/v1/agents/Research Agent/stop").json()
+    assert stop["accepted"] is True
+    assert stop["runtime_state"] == "stopped"
+    start = vault_client.post("/api/v1/agents/Research Agent/start").json()
+    assert start["accepted"] is True
+    assert start["runtime_state"] == "running"
+
+
+def test_list_merges_live_runtime_state(vault_client: TestClient) -> None:
+    agents = vault_client.get("/api/v1/agents").json()
+    research = next(a for a in agents if a["name"] == "Research Agent")
+    assert research["runtime_state"] == "running"
+    assert research["cycles"] == 3
+
+
+def test_agent_activity_feed(vault_client: TestClient) -> None:
+    res = vault_client.get("/api/v1/agents/Research Agent/activity")
+    assert res.status_code == 200
+    assert res.json()[0]["agent"] == "Research Agent"
 
 
 def test_control_rejects_unknown_action(vault_client: TestClient) -> None:

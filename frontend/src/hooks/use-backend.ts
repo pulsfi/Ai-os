@@ -47,6 +47,8 @@ export const qk = {
   agents: ["agents"] as const,
   agent: (name: string) => ["agents", name] as const,
   agentReports: (name: string) => ["agents", name, "reports"] as const,
+  agentRuntime: ["agents", "runtime"] as const,
+  agentActivity: (name: string) => ["agents", name, "activity"] as const,
 };
 
 export function useHealth() {
@@ -284,7 +286,24 @@ export function useAgents() {
   return useQuery({
     queryKey: qk.agents,
     queryFn: agentsService.list,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000, // live pipeline — refresh often
+  });
+}
+
+export function useAgentRuntime() {
+  return useQuery({
+    queryKey: qk.agentRuntime,
+    queryFn: agentsService.runtime,
+    refetchInterval: 8_000,
+  });
+}
+
+export function useAgentActivity(name: string) {
+  return useQuery({
+    queryKey: qk.agentActivity(name),
+    queryFn: () => agentsService.activity(name),
+    enabled: name.length > 0,
+    refetchInterval: 8_000,
   });
 }
 
@@ -306,8 +325,13 @@ export function useAgentReports(name: string) {
 
 /** start/stop/restart — backend answers honestly (declined until Stage 6). */
 export function useAgentControl() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ name, action }: { name: string; action: "start" | "stop" | "restart" }) =>
       agentsService.control(name, action),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.agents });
+      void queryClient.invalidateQueries({ queryKey: qk.agentRuntime });
+    },
   });
 }

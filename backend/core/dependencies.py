@@ -18,7 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import Settings, get_settings
 from database.engine import get_session_factory
 from database.redis_client import get_redis
-from modules.agents import AgentsService, get_agents_service
+from modules.agents import (
+    AgentRuntime,
+    AgentsService,
+    get_agent_runtime,
+    get_agents_service,
+)
 from modules.bots import BotManager, get_bot_manager
 from modules.chat import ChatService, get_chat_service
 from modules.execution import (
@@ -77,6 +82,11 @@ def get_agents(settings: SettingsDep) -> AgentsService:
     return get_agents_service(settings)
 
 
+def get_runtime(settings: SettingsDep) -> AgentRuntime:
+    """Provide the live agent pipeline runtime (Stage 6)."""
+    return get_agent_runtime(settings)
+
+
 def get_pumpfun(settings: SettingsDep) -> PumpFunClient:
     """Provide the read-only pump.fun discovery client."""
     return get_pumpfun_client(settings)
@@ -129,6 +139,7 @@ SolanaClientDep = Annotated[RpcClient, Depends(get_solana_client)]
 MarketManagerDep = Annotated[MarketManager, Depends(get_market)]
 ChatServiceDep = Annotated[ChatService, Depends(get_chat)]
 AgentsServiceDep = Annotated[AgentsService, Depends(get_agents)]
+AgentRuntimeDep = Annotated[AgentRuntime, Depends(get_runtime)]
 PumpFunDep = Annotated[PumpFunClient, Depends(get_pumpfun)]
 PaperTradingDep = Annotated[PaperTradingService, Depends(get_paper_trading)]
 BotManagerDep = Annotated[BotManager, Depends(get_bots)]

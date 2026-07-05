@@ -9,6 +9,8 @@ import {
   agentDetailSchema,
   agentReportSchema,
   agentSummarySchema,
+  agentTickSchema,
+  runtimeStatusSchema,
   chainStatusSchema,
   chatStatusSchema,
   healthReportSchema,
@@ -29,6 +31,8 @@ import {
   type AgentDetail,
   type AgentReport,
   type AgentSummary,
+  type AgentTick,
+  type RuntimeStatus,
   type ChainStatus,
   type ChatStatus,
   type HealthReport,
@@ -217,11 +221,15 @@ export const agentsService = {
   reports: (name: string): Promise<AgentReport[]> =>
     getValidated(`/agents/${encodeURIComponent(name)}/reports`, z.array(agentReportSchema)),
 
-  /**
-   * POST /agents/{name}/{action} — start | stop | restart.
-   * The backend currently declines with a reason (no runtime until Stage 6);
-   * the UI must surface that reason honestly.
-   */
+  /** GET /agents/runtime — live pipeline status + activity feed (Stage 6). */
+  runtime: (): Promise<RuntimeStatus> =>
+    getValidated("/agents/runtime", runtimeStatusSchema),
+
+  /** GET /agents/{name}/activity — the agent's live pipeline output. */
+  activity: (name: string): Promise<AgentTick[]> =>
+    getValidated(`/agents/${encodeURIComponent(name)}/activity`, z.array(agentTickSchema)),
+
+  /** POST /agents/{name}/{action} — REAL start/stop/restart in the pipeline. */
   control: (name: string, action: "start" | "stop" | "restart"): Promise<AgentControlResult> =>
     postValidated(
       `/agents/${encodeURIComponent(name)}/${action}`,

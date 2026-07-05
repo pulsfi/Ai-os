@@ -18,6 +18,7 @@ from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from database.engine import dispose_engine
 from database.redis_client import close_redis
+from modules.agents import close_agent_runtime, get_agent_runtime
 from modules.bots import close_bot_manager, get_bot_manager
 from modules.chat import close_chat_service
 from modules.execution import close_executor, close_swap_builder
@@ -61,7 +62,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.daily_report_hour_utc,
         )
         report_scheduler.start()
+    if settings.agents_runtime_enabled:
+        # The 7-agent pipeline runs live over the real modules (read-only).
+        get_agent_runtime(settings).start()
     yield
+    await close_agent_runtime()
     if report_scheduler is not None:
         await report_scheduler.stop()
     if scheduler is not None:

@@ -163,6 +163,11 @@ export const agentSummarySchema = z.object({
   report_count: z.number(),
   last_report_date: z.string().nullable(),
   last_activity: z.string().nullable(),
+  runtime_state: z.string(),
+  last_run: z.string().nullable(),
+  last_summary: z.string().nullable(),
+  last_ok: z.boolean().nullable(),
+  cycles: z.number(),
 });
 
 export type AgentSummary = z.infer<typeof agentSummarySchema>;
@@ -188,9 +193,41 @@ export const agentControlResultSchema = z.object({
   action: z.string(),
   accepted: z.boolean(),
   reason: z.string(),
+  runtime_state: z.string(),
 });
 
 export type AgentControlResult = z.infer<typeof agentControlResultSchema>;
+
+export const agentTickSchema = z.object({
+  agent: z.string(),
+  ts: z.string(),
+  ok: z.boolean(),
+  summary: z.string(),
+  detail: z.string(),
+});
+
+export type AgentTick = z.infer<typeof agentTickSchema>;
+
+export const runtimeAgentStatusSchema = z.object({
+  name: z.string(),
+  enabled: z.boolean(),
+  runtime_state: z.string(),
+  runs: z.number(),
+  last_run: z.string().nullable(),
+  last_summary: z.string().nullable(),
+  last_ok: z.boolean().nullable(),
+});
+
+export const runtimeStatusSchema = z.object({
+  running: z.boolean(),
+  cycle_seconds: z.number(),
+  cycles: z.number(),
+  started_at: z.string().nullable(),
+  agents: z.array(runtimeAgentStatusSchema),
+  recent: z.array(agentTickSchema),
+});
+
+export type RuntimeStatus = z.infer<typeof runtimeStatusSchema>;
 
 // --- pump.fun discovery ----------------------------------------------------
 

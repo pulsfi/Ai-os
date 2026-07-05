@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # --- vault bridge for the agents API (read-only) ---
     agents_dir: str = "04 Agents"  # relative to vault_path
 
+    # --- agent runtime (Stage 6: the 7-agent pipeline runs live) ---
+    agents_runtime_enabled: bool = True  # build + autostart the pipeline loop
+    agents_cycle_seconds: float = 60.0  # one full pipeline pass per this many s
+
     # --- paper trading ledger (read-only; written by the Node scalper) ---
     paper_db_path: str = "09 Automation/market/market.db"  # relative to vault_path
 

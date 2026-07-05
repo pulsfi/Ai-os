@@ -432,8 +432,57 @@ wallet SIGNS them. No private key ever touches the server or the repo.
 - Build-buy: a real 848-byte unsigned Jupiter tx for ~$5 of BONK,
   ready for Phantom to sign. tsc/eslint/next build clean.
 
-## ⏭️ Next
+## ✅ Milestone 14 — Stage 6: the 7-agent pipeline runs live (done 2026-07-05)
 
-- Optional: post-trade fill reconciliation into the ledger; a "max
-  wallet exposure" guard; per-token position view for the connected
-  wallet. Autonomous live execution remains gated on the scorecard.
+The vault's 7 agents are no longer static notes — they run as a live
+control loop over the REAL modules, every 60s. No invented cognition:
+each agent queries live data / live system state and emits a real result.
+
+### Backend (`modules/agents/runtime.py`)
+
+- **AgentRuntime** threads a shared context through the pipeline
+  (Research → Strategy → Risk → Execution → Monitoring → Learning →
+  Documentation) each cycle. Real jobs:
+  - Research: live pump.fun new launches
+  - Strategy: live bot-fleet state + exposure
+  - Risk: risk-engine posture (limits, daily PnL, kill switch)
+  - Execution: execution state (reports only — gate unchanged)
+  - Monitoring: data-provider health
+  - Learning: paper track record → best/worst strategy, current lesson
+  - Documentation: cycle summary (the scheduler still writes the note)
+- Error-contained: one failing agent never stops the pipeline.
+- The vault markdown stays the source of truth for mission/rules/reports;
+  the runtime overlays live state onto each agent.
+- Control endpoints are now REAL: `POST /agents/{name}/{start|stop|restart}`
+  toggles the agent in the running pipeline. New: `GET /agents/runtime`
+  (cadence, cycles, per-agent state, activity feed),
+  `GET /agents/{name}/activity`. Autostarts via lifespan
+  (`AGENTS_RUNTIME_ENABLED`, `AGENTS_CYCLE_SECONDS`).
+- Tests: 131/131 (8 new: full-cycle ticks, disable-skips-others,
+  error containment, real control state changes, activity feed).
+
+### Frontend (Agent Manager)
+
+- Live pipeline banner (running badge, cycle count, cadence, active
+  count). Each card shows a live runtime badge (live/idle/stopped/error),
+  the agent's current one-line output, run count, and last-run age.
+  Controls really start/stop/restart agents. The detail drawer gains a
+  **Live activity** feed above Mission + Reports.
+
+### Verified live
+
+- Pipeline running: all 7 agents produced real ticks in cycle 1 —
+  Research saw 8 launches (newest ALPHA), Strategy 3/3 bots + 2 open,
+  Monitoring 4 providers healthy, Learning the fleet record.
+- Stop/start of an agent confirmed to change runtime state.
+- tsc/eslint/next build clean.
+
+> The full backend roadmap (Stages 1–6) is now implemented. Stage 5 live
+> execution stays deliberately gated: bots are paper-only (no key), and
+> real trades require a human Phantom approval.
+
+## ⏭️ Next (polish / optional)
+
+- Post-trade fill reconciliation into the ledger; a wallet-exposure guard.
+- Speed up the test suite (agent-runtime tests build real singletons).
+- Let the fleet mature the track record toward the go-live scorecard.
