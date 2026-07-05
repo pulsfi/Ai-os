@@ -39,7 +39,22 @@ function shorten(addr: string): string {
   return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
 }
 
+/**
+ * Whether Phantom is installed, read hydration-safely. `window` doesn't
+ * exist on the server, so useSyncExternalStore returns the server
+ * snapshot (false) during hydration, then switches to the real client
+ * value — no SSR/client mismatch.
+ */
+function usePhantomInstalled(): boolean {
+  return React.useSyncExternalStore(
+    () => () => {}, // provider presence doesn't change during a session
+    () => phantom.installed(),
+    () => false,
+  );
+}
+
 export function WalletTradePanel() {
+  const installed = usePhantomInstalled();
   const [pubkey, setPubkey] = React.useState<string | null>(null);
   const [sol, setSol] = React.useState<number | null>(null);
   const [mint, setMint] = React.useState("");
@@ -131,7 +146,7 @@ export function WalletTradePanel() {
               Connect Phantom to trade. Your private key stays in the wallet —
               the app only builds trades for you to approve.
             </p>
-            {phantom.installed() ? (
+            {installed ? (
               <Button onClick={connect}>
                 <Wallet className="size-4" /> Connect Phantom
               </Button>
