@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     exec_daily_loss_limit_usd: float = 25.0  # halt trading after this daily loss
     exec_max_concurrent_positions: int = 2
     exec_max_slippage_bps: int = 150  # 1.5% max slippage on quotes
+    # Manual (Phantom-signed) trades: the user approves each one, so this is
+    # just a fat-finger guard on buy size. Raise it if you want bigger trades.
+    manual_trade_max_usd: float = 100.0
     # Go-live readiness gates (all must pass before live is justifiable).
     golive_min_closed_trades: int = 50
     golive_min_win_rate_pct: float = 55.0

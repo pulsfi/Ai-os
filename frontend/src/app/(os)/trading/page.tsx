@@ -9,6 +9,7 @@ import { ExecutionPanel } from "@/components/trading/execution-panel";
 import { PerformanceCard } from "@/components/trading/performance-card";
 import { PumpFunCard } from "@/components/trading/pumpfun-card";
 import { TokenInspector } from "@/components/trading/token-inspector";
+import { WalletTradePanel } from "@/components/trading/wallet-trade-panel";
 import { TrendingCard } from "@/components/trading/trending-card";
 
 export const metadata = { title: "Trading" };
@@ -49,6 +50,9 @@ export default function TradingPage() {
           <PerformanceCard />
         </FadeIn>
         <FadeIn delay={0.1} className="lg:col-span-2">
+          <WalletTradePanel />
+        </FadeIn>
+        <FadeIn delay={0.11} className="lg:col-span-2">
           <ExecutionPanel />
         </FadeIn>
         <FadeIn delay={0.12}>

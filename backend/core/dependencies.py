@@ -21,7 +21,14 @@ from database.redis_client import get_redis
 from modules.agents import AgentsService, get_agents_service
 from modules.bots import BotManager, get_bot_manager
 from modules.chat import ChatService, get_chat_service
-from modules.execution import DryRunExecutor, RiskEngine, get_executor, get_risk_engine
+from modules.execution import (
+    DryRunExecutor,
+    ManualSwapBuilder,
+    RiskEngine,
+    get_executor,
+    get_risk_engine,
+    get_swap_builder,
+)
 from modules.market import MarketManager, get_market_manager
 from modules.market.helius import HeliusClient, get_helius_client
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
@@ -100,6 +107,16 @@ def get_exec(settings: SettingsDep) -> DryRunExecutor:
     return get_executor(settings, get_risk_engine(settings))
 
 
+def get_swaps(settings: SettingsDep) -> ManualSwapBuilder:
+    """Provide the manual swap builder (builds unsigned txs for Phantom)."""
+    return get_swap_builder(
+        settings,
+        get_risk_engine(settings),
+        get_rpc_client(settings),
+        get_market_manager(settings),
+    )
+
+
 def get_helius(settings: SettingsDep) -> HeliusClient:
     """Provide the Helius Enhanced Transactions client (key-gated)."""
     return get_helius_client(settings)
@@ -119,3 +136,4 @@ VaultServiceDep = Annotated[VaultService, Depends(get_vault)]
 HeliusDep = Annotated[HeliusClient, Depends(get_helius)]
 RiskEngineDep = Annotated[RiskEngine, Depends(get_risk)]
 ExecutorDep = Annotated[DryRunExecutor, Depends(get_exec)]
+SwapBuilderDep = Annotated[ManualSwapBuilder, Depends(get_swaps)]

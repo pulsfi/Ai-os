@@ -22,7 +22,7 @@ from modules.execution.risk_engine import RiskEngine
 logger = logging.getLogger(__name__)
 
 # Jupiter public quote API (read-only; returns route + price impact).
-_JUPITER_QUOTE = "https://quote-api.jup.ag/v6/quote"
+_JUPITER_QUOTE = "https://lite-api.jup.ag/swap/v1/quote"
 _USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 _SOL_MINT = "So11111111111111111111111111111111111111112"
 

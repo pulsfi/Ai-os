@@ -12,14 +12,22 @@ from modules.execution.executor import (
     close_executor,
     get_executor,
 )
+from modules.execution.manual_swap import (
+    ManualSwapBuilder,
+    close_swap_builder,
+    get_swap_builder,
+)
 from modules.execution.readiness import evaluate_readiness
 from modules.execution.risk_engine import RiskEngine, get_risk_engine
 
 __all__ = [
     "DryRunExecutor",
+    "ManualSwapBuilder",
     "RiskEngine",
     "close_executor",
+    "close_swap_builder",
     "evaluate_readiness",
     "get_executor",
     "get_risk_engine",
+    "get_swap_builder",
 ]

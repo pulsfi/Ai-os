@@ -42,14 +42,18 @@ import {
   type PaperTrade,
   type PumpCoin,
   type SystemInfo,
+  builtSwapSchema,
   dailyReportResultSchema,
   executionStatusSchema,
   goLiveReadinessSchema,
   tokenActivitySchema,
+  walletBalanceSchema,
+  type BuiltSwap,
   type DailyReportResult,
   type ExecutionStatus,
   type GoLiveReadiness,
   type TokenActivity,
+  type WalletBalance,
   type TokenAuthorities,
   type TokenInfo,
   type TokenMarketData,
@@ -172,6 +176,26 @@ export const executionService = {
   /** POST /execution/kill/{on|off} — global halt (can only stop execution). */
   setKill: (on: boolean): Promise<ExecutionStatus> =>
     postValidated(`/execution/kill/${on ? "on" : "off"}`, undefined, executionStatusSchema),
+
+  /** GET /execution/wallet/{pubkey}/balance — read-only SOL balance. */
+  walletBalance: (pubkey: string): Promise<WalletBalance> =>
+    getValidated(`/execution/wallet/${encodeURIComponent(pubkey)}/balance`, walletBalanceSchema),
+
+  /** POST /execution/trade/build-buy — UNSIGNED SOL→token buy for Phantom. */
+  buildBuy: (userPubkey: string, mint: string, usdSize: number): Promise<BuiltSwap> =>
+    postValidated(
+      "/execution/trade/build-buy",
+      { user_pubkey: userPubkey, mint, usd_size: usdSize },
+      builtSwapSchema,
+    ),
+
+  /** POST /execution/trade/build-sell — UNSIGNED token→SOL full-balance sell. */
+  buildSell: (userPubkey: string, mint: string): Promise<BuiltSwap> =>
+    postValidated(
+      "/execution/trade/build-sell",
+      { user_pubkey: userPubkey, mint },
+      builtSwapSchema,
+    ),
 };
 
 export const chatService = {

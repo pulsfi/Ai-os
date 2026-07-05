@@ -417,3 +417,23 @@ export const goLiveReadinessSchema = z.object({
 });
 
 export type GoLiveReadiness = z.infer<typeof goLiveReadinessSchema>;
+
+// --- manual wallet trading (Phantom-signed) ---------------------------------
+
+export const walletBalanceSchema = z.object({
+  address: z.string(),
+  sol: z.number(),
+  lamports: z.number(),
+});
+
+export type WalletBalance = z.infer<typeof walletBalanceSchema>;
+
+export const builtSwapSchema = z.object({
+  swap_transaction_b64: z.string(),
+  description: z.string(),
+  price_impact_pct: z.number().nullable(),
+  out_amount: z.string().nullable(),
+  warning: z.string(),
+});
+
+export type BuiltSwap = z.infer<typeof builtSwapSchema>;

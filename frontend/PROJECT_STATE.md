@@ -389,10 +389,51 @@ No wallet, no private key, no transaction signing anywhere in the tree.
 > dry-run Jupiter quotes now feed the eventual live path — paper PnL is
 > not trusted at face value.
 
+## ✅ Milestone 13 — Real-money trading via Phantom (non-custodial) (done 2026-07-05)
+
+Real trading, the safe way: the backend BUILDS trades, the user's own
+wallet SIGNS them. No private key ever touches the server or the repo.
+
+### Backend (`modules/execution/manual_swap.py`)
+
+- **ManualSwapBuilder** — builds a real Jupiter swap for the user's
+  PUBLIC key and returns it UNSIGNED (base64). Buy = SOL→token sized in
+  USD (converted via the live SOL price); sell = token→SOL for the full
+  wallet balance (read via RPC `getTokenAccountsByOwner`). Guard rails
+  still apply: the global kill switch halts building, and a per-trade
+  USD cap (`MANUAL_TRADE_MAX_USD`, default $100) blocks fat-finger buys.
+- Read-only `getBalance` / token-balance helpers added to the RPC client.
+- Endpoints: `GET /execution/wallet/{pubkey}/balance`,
+  `POST /execution/trade/build-buy`, `.../build-sell`. None of them can
+  move funds — they only return an unsigned transaction.
+- Jupiter host updated to the current `lite-api.jup.ag/swap/v1` (the old
+  `quote-api.jup.ag/v6` was retired / no longer resolves).
+- Tests: 125/125 (7 new: unsigned-tx build, kill-switch halt, buy cap,
+  no-route error, full-balance sell, empty-holdings refusal).
+
+### Frontend
+
+- **WalletTradePanel** on the Trading page: Connect Phantom (or install
+  prompt), live SOL balance, mint input, buy-by-USD + sell-all buttons.
+  Flow: backend builds → Phantom shows the trade → user approves →
+  on-chain → Solscan link. A prominent real-funds risk warning; wallet
+  rejections are handled quietly. Uses `@solana/web3.js` only to hand
+  Phantom the transaction (`src/lib/phantom.ts`).
+
+### The safety line (unchanged)
+
+- **Bots stay paper.** They have no key and cannot reach the wallet path
+  — autonomous live trading is still gated behind the go-live scorecard.
+  Only the human, clicking Phantom, can execute real trades.
+
+### Verified live
+
+- Balance read: real 9.17M SOL returned for a known mainnet address.
+- Build-buy: a real 848-byte unsigned Jupiter tx for ~$5 of BONK,
+  ready for Phantom to sign. tsc/eslint/next build clean.
+
 ## ⏭️ Next
 
-- Let the record mature past 7 days; re-check readiness with the
-  inflation caveat in mind (consider a realized-PnL sanity filter).
-- When (and only when) all gates are green: build the live path
-  deliberately — wallet from a secure store, tx build/sign/send with
-  priority fees, confirmation + reconciliation, tiny-size ramp.
+- Optional: post-trade fill reconciliation into the ledger; a "max
+  wallet exposure" guard; per-token position view for the connected
+  wallet. Autonomous live execution remains gated on the scorecard.

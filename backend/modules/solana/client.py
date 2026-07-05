@@ -171,6 +171,27 @@ class RpcClient:
             freeze_authority=parsed.get("freezeAuthority"),
         )
 
+    async def get_balance_lamports(self, pubkey: str) -> int:
+        """SOL balance of an address, in lamports (read-only)."""
+        r = await self.call("getBalance", [pubkey])
+        return int((r or {}).get("value", 0))
+
+    async def get_token_balance_raw(self, owner: str, mint: str) -> tuple[int, int]:
+        """(raw_amount, decimals) an owner holds of one SPL mint, summed
+        across their token accounts. (0, 0) when they hold none."""
+        r = await self.call(
+            "getTokenAccountsByOwner",
+            [owner, {"mint": mint}, {"encoding": "jsonParsed"}],
+        )
+        accounts = (r or {}).get("value") or []
+        total = 0
+        decimals = 0
+        for acct in accounts:
+            info = acct["account"]["data"]["parsed"]["info"]["tokenAmount"]
+            total += int(info["amount"])
+            decimals = int(info["decimals"])
+        return total, decimals
+
     async def get_chain_status(self) -> ChainStatus:
         """Aggregate snapshot; individual probe failures degrade, never raise."""
 

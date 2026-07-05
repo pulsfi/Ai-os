@@ -65,6 +65,46 @@ class OrderResult(BaseModel):
     detail: str
 
 
+class WalletBalance(BaseModel):
+    """Read-only balance view of a PUBLIC address (never a key)."""
+
+    address: str
+    sol: float
+    lamports: int
+
+
+class BuildBuyRequest(BaseModel):
+    """Ask the backend to BUILD (not sign) a SOL -> token swap."""
+
+    user_pubkey: str = Field(min_length=32, max_length=44)
+    mint: str = Field(min_length=32, max_length=44)
+    usd_size: float = Field(gt=0)
+
+
+class BuildSellRequest(BaseModel):
+    """Ask the backend to BUILD (not sign) a token -> SOL swap (full size)."""
+
+    user_pubkey: str = Field(min_length=32, max_length=44)
+    mint: str = Field(min_length=32, max_length=44)
+
+
+class BuiltSwap(BaseModel):
+    """An UNSIGNED transaction for the user's wallet to approve.
+
+    The backend cannot execute this — only the holder of the key (the
+    user's Phantom wallet) can sign it, one explicit click per trade.
+    """
+
+    swap_transaction_b64: str
+    description: str
+    price_impact_pct: float | None = None
+    out_amount: str | None = None
+    warning: str = (
+        "Review this trade in your wallet before approving. Meme-coin "
+        "trades can lose their full value. The app never sees your key."
+    )
+
+
 class ReadinessCriterion(BaseModel):
     """One go-live gate: where the paper record stands vs the target."""
 
