@@ -5,9 +5,11 @@
  * read-only /vault endpoints (allowlisted folders only).
  */
 import * as React from "react";
-import { FileText, FolderOpen } from "lucide-react";
+import { FileText, FolderOpen, PenLine } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -18,9 +20,38 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
-import { useVaultDirs, useVaultNote, useVaultNotes } from "@/hooks/use-backend";
+import {
+  useVaultDirs,
+  useVaultNote,
+  useVaultNotes,
+  useWriteDailyReport,
+} from "@/hooks/use-backend";
 import { timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+function DailyReportButton({ onWritten }: { onWritten: () => void }) {
+  const write = useWriteDailyReport();
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={write.isPending}
+      onClick={() =>
+        write.mutate(undefined, {
+          onSuccess: (res) => {
+            toast.success(`Fleet report written to ${res.path}`);
+            onWritten();
+          },
+          onError: (err) =>
+            toast.error(err instanceof Error ? err.message : "Report failed"),
+        })
+      }
+    >
+      <PenLine className="size-3.5" />
+      {write.isPending ? "Writing…" : "Write daily report"}
+    </Button>
+  );
+}
 
 export function VaultNotesCard() {
   const dirs = useVaultDirs();
@@ -39,12 +70,17 @@ export function VaultNotesCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FolderOpen className="size-4 text-primary" /> Vault notes
-        </CardTitle>
-        <CardDescription>
-          Read live from the Obsidian vault (read-only bridge)
-        </CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FolderOpen className="size-4 text-primary" /> Vault notes
+            </CardTitle>
+            <CardDescription>
+              Read live from the Obsidian vault; the one write is the daily fleet report
+            </CardDescription>
+          </div>
+          <DailyReportButton onWritten={() => setDir("12 Daily Notes")} />
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* folder tabs */}

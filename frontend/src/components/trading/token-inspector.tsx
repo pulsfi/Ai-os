@@ -22,9 +22,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
-import { useMarketHistory, useMarketToken } from "@/hooks/use-backend";
+import { useMarketHistory, useMarketToken, useTokenActivity } from "@/hooks/use-backend";
 import { ApiError } from "@/lib/api/client";
 import { formatMoney, formatPct, formatPrice, timeAgo } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -40,6 +41,7 @@ export function TokenInspector() {
   const [address, setAddress] = React.useState("");
   const token = useMarketToken(address);
   const history = useMarketHistory(address, 50);
+  const activity = useTokenActivity(address);
 
   return (
     <Card>
@@ -104,6 +106,67 @@ export function TokenInspector() {
               <Stat label="Liquidity" value={formatMoney(token.data.market.liquidity_usd)} />
               <Stat label="Market cap" value={formatMoney(token.data.market.market_cap)} />
               <Stat label="FDV" value={formatMoney(token.data.market.fdv)} />
+            </div>
+
+            {/* live flow (Helius parsed txs) — key-gated, honest states */}
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                Live flow (Helius, last {activity.data?.sampled_txs ?? "…"} txs)
+              </p>
+              {activity.isFetching && !activity.data && (
+                <Skeleton className="h-10 rounded" />
+              )}
+              {activity.isError && !activity.isFetching && (
+                <p className="text-xs text-muted-foreground">
+                  {activity.error instanceof ApiError
+                    ? activity.error.message
+                    : "Activity unavailable."}
+                </p>
+              )}
+              {activity.data && (
+                <div className="space-y-2">
+                  {/* buy/sell pressure bar */}
+                  {activity.data.buy_ratio_pct !== null ? (
+                    <>
+                      <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="bg-emerald-400"
+                          style={{ width: `${activity.data.buy_ratio_pct}%` }}
+                        />
+                        <div
+                          className="bg-red-400"
+                          style={{ width: `${100 - activity.data.buy_ratio_pct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between font-mono text-xs">
+                        <span className="text-emerald-400">
+                          {activity.data.buys} buys
+                        </span>
+                        <span
+                          className={cn(
+                            activity.data.buy_ratio_pct >= 50
+                              ? "text-emerald-400"
+                              : "text-red-400",
+                          )}
+                        >
+                          {activity.data.buy_ratio_pct}% buy pressure
+                        </span>
+                        <span className="text-red-400">{activity.data.sells} sells</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No classifiable swaps in the latest transactions.
+                    </p>
+                  )}
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {activity.data.unique_wallets} wallets
+                    {activity.data.txs_per_minute !== null &&
+                      ` · ${activity.data.txs_per_minute} tx/min`}
+                    {activity.data.last_ts && ` · last ${timeAgo(activity.data.last_ts)}`}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* history — honest empty/error states, no fake chart */}

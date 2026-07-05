@@ -357,3 +357,27 @@ export const vaultNoteContentSchema = z.object({
 });
 
 export type VaultNoteContent = z.infer<typeof vaultNoteContentSchema>;
+
+export const dailyReportResultSchema = z.object({
+  path: z.string(),
+  written: z.boolean(),
+});
+
+export type DailyReportResult = z.infer<typeof dailyReportResultSchema>;
+
+// --- token activity (Helius Enhanced; key-gated) ----------------------------
+
+export const tokenActivitySchema = z.object({
+  mint: z.string(),
+  sampled_txs: z.number(),
+  swaps: z.number(),
+  buys: z.number(),
+  sells: z.number(),
+  buy_ratio_pct: z.number().nullable(),
+  unique_wallets: z.number(),
+  txs_per_minute: z.number().nullable(),
+  first_ts: z.string().nullable(),
+  last_ts: z.string().nullable(),
+});
+
+export type TokenActivity = z.infer<typeof tokenActivitySchema>;

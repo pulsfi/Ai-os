@@ -1,10 +1,14 @@
-"""Read-only vault notes bridge.
+"""Vault notes bridge — reads anywhere allowlisted, writes ONE thing.
 
-Serves markdown notes from inside the Obsidian vault to the frontend.
-Strictly read-only and strictly contained: every requested path is
+Reads: markdown notes from allowlisted folders. Every requested path is
 resolved and must land inside the vault root — traversal (`..`, absolute
 paths, drive letters) gets a 404, never a file. Only `.md` files are
 visible; everything else in the vault does not exist to this API.
+
+Writes: exactly one operation exists — appending the daily bot report to
+today's note in `12 Daily Notes/`. The target path is COMPUTED (today's
+date), never taken from the client, so the write surface cannot be
+steered anywhere else.
 """
 
 import logging
@@ -88,6 +92,33 @@ class VaultService:
                 file.stat().st_mtime, tz=timezone.utc
             ).isoformat(timespec="seconds"),
         )
+
+
+    # -- the single write path ---------------------------------------------
+
+    _DAILY_DIR = "12 Daily Notes"
+
+    def append_daily_report(self, section_markdown: str) -> str:
+        """Append a report section to TODAY's daily note; create it if absent.
+
+        The filename is derived from the current date — client input never
+        reaches the filesystem. Returns the note's vault-relative path.
+        """
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        directory = self._root / self._DAILY_DIR
+        directory.mkdir(exist_ok=True)
+        file = directory / f"{today}.md"
+        if not file.exists():
+            # Match the vault's daily-note conventions (frontmatter + H1).
+            file.write_text(
+                f"---\ntags: [daily]\ncreated: {today}\n---\n\n"
+                f"# {today}\n\n← Back to [[Home]] · Template: [[Daily Template]]\n",
+                encoding="utf-8",
+            )
+        with file.open("a", encoding="utf-8") as fh:
+            fh.write(f"\n{section_markdown.rstrip()}\n")
+        logger.info("daily report appended to %s", file.name)
+        return f"{self._DAILY_DIR}/{file.name}"
 
 
 _service: VaultService | None = None

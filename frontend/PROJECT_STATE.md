@@ -289,9 +289,42 @@ no keys, no signing anywhere in the module tree (Stage 5 gate intact).
   Log and Memory Hub render live. Honest-empty-state card removed
   because the real thing exists now.
 
-## ⏭️ Next — Milestone 8
+## ✅ Milestone 8 — Helius flow data + daily-report writer (done 2026-07-05)
 
-- Track record review after the tuned band runs for a day; consider a
-  Helius Enhanced API provider (tx-level data) now that the key works.
-- Daily-note writer: let the Documentation Agent write bot performance
-  into `12 Daily Notes/` (first vault WRITE path — needs care).
+### Backend
+
+- **`modules/market/helius.py`** — Helius Enhanced Transactions client
+  (key-gated): `GET /market/activity/{mint}` summarizes the latest
+  parsed transactions into buys vs sells (from swap token legs), buy
+  ratio, unique wallets, tx/min. Rate-guarded; no key = honest
+  `configuration_error`. Note: native-SOL legs aren't classifiable
+  (SOL shows swaps but 0/0 buys/sells); SPL tokens classify fully.
+- **First vault WRITE path** — `POST /vault/daily-report` appends the
+  fleet's performance table to TODAY's `12 Daily Notes/` note (created
+  with the vault's frontmatter conventions if absent). The target path
+  is computed server-side from the date — client input never reaches
+  the filesystem. Append-only (tested: never overwrites).
+- Tests: 86/86 (7 new: swap classification, empty history, key gate,
+  upstream errors, report markdown, note creation, append-not-destroy).
+
+### Frontend
+
+- **Token inspector** gains a "Live flow" section: buy/sell pressure
+  bar, unique wallets, tx rate, last-trade age (30s refresh).
+- **Memory page** gains "Write daily report" — writes via the backend,
+  toasts the path, jumps to the 12 Daily Notes folder.
+
+### Verified live
+
+- BONK: 50 txs sampled → 62.5% buy pressure (5 buys/3 sells), 24
+  wallets, 11 tx/min, served through the user's Helius key.
+- Daily report written to `12 Daily Notes/2026-07-05.md` with real
+  fleet stats — and the tuned Graduation Rider now shows a 50% win
+  rate (was 0% before the 85–98.5% entry band).
+
+## ⏭️ Next — Milestone 9
+
+- Feed the Helius flow signal into the Launch Sniper (require buy
+  pressure before entry) once enough activity data accumulates.
+- Optional: scheduled daily report (needs a user-created Windows task
+  or an in-process daily timer).

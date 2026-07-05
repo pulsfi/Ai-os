@@ -22,6 +22,7 @@ from modules.agents import AgentsService, get_agents_service
 from modules.bots import BotManager, get_bot_manager
 from modules.chat import ChatService, get_chat_service
 from modules.market import MarketManager, get_market_manager
+from modules.market.helius import HeliusClient, get_helius_client
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
 from modules.solana import RpcClient, get_rpc_client
 from modules.trading import PaperTradingService, get_paper_trading_service
@@ -84,8 +85,13 @@ def get_bots(settings: SettingsDep) -> BotManager:
 
 
 def get_vault(settings: SettingsDep) -> VaultService:
-    """Provide the read-only vault notes bridge."""
+    """Provide the vault notes bridge."""
     return get_vault_service(settings)
+
+
+def get_helius(settings: SettingsDep) -> HeliusClient:
+    """Provide the Helius Enhanced Transactions client (key-gated)."""
+    return get_helius_client(settings)
 
 
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
@@ -99,3 +105,4 @@ PumpFunDep = Annotated[PumpFunClient, Depends(get_pumpfun)]
 PaperTradingDep = Annotated[PaperTradingService, Depends(get_paper_trading)]
 BotManagerDep = Annotated[BotManager, Depends(get_bots)]
 VaultServiceDep = Annotated[VaultService, Depends(get_vault)]
+HeliusDep = Annotated[HeliusClient, Depends(get_helius)]

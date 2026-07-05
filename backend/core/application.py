@@ -21,6 +21,7 @@ from database.redis_client import close_redis
 from modules.bots import close_bot_manager, get_bot_manager
 from modules.chat import close_chat_service
 from modules.market import close_market_manager, get_market_manager
+from modules.market.helius import close_helius_client
 from modules.market.pumpfun import close_pumpfun_client
 from modules.market.market_scheduler import MarketScheduler
 from modules.solana import close_rpc_client
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_bot_manager()
     await close_market_manager()
     await close_pumpfun_client()
+    await close_helius_client()
     await close_chat_service()
     await dispose_engine()
     await close_redis()

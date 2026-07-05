@@ -5,7 +5,8 @@ Thin routers per the architecture: all logic lives in modules/market.
 
 from fastapi import APIRouter, Query
 
-from core.dependencies import MarketManagerDep, PumpFunDep
+from core.dependencies import HeliusDep, MarketManagerDep, PumpFunDep
+from modules.market.helius import TokenActivity
 from modules.market.market_models import (
     HistoryPoint,
     MarketStatus,
@@ -15,6 +16,15 @@ from modules.market.market_models import (
 from modules.market.pumpfun import PumpCoin
 
 router = APIRouter()
+
+
+@router.get("/activity/{mint}", response_model=TokenActivity)
+async def token_activity(
+    mint: str, helius: HeliusDep, limit: int = Query(default=50, ge=10, le=100)
+) -> TokenActivity:
+    """Live flow for a token from Helius parsed transactions: buys vs
+    sells, unique wallets, tx rate. Key-gated (HELIUS_API_KEY)."""
+    return await helius.get_token_activity(mint, limit)
 
 
 @router.get("/pumpfun/new", response_model=list[PumpCoin])

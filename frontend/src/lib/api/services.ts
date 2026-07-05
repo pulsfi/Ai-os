@@ -42,6 +42,10 @@ import {
   type PaperTrade,
   type PumpCoin,
   type SystemInfo,
+  dailyReportResultSchema,
+  tokenActivitySchema,
+  type DailyReportResult,
+  type TokenActivity,
   type TokenAuthorities,
   type TokenInfo,
   type TokenMarketData,
@@ -98,6 +102,10 @@ export const marketService = {
       `/market/history/${encodeURIComponent(address)}?limit=${limit}`,
       z.array(historyPointSchema),
     ),
+
+  /** GET /market/activity/{mint} — live buy/sell flow (needs HELIUS_API_KEY). */
+  getActivity: (mint: string): Promise<TokenActivity> =>
+    getValidated(`/market/activity/${encodeURIComponent(mint)}`, tokenActivitySchema),
 };
 
 export const pumpfunService = {
@@ -191,6 +199,10 @@ export const vaultService = {
   /** GET /vault/note — one note's full markdown. */
   note: (path: string): Promise<VaultNoteContent> =>
     getValidated(`/vault/note?path=${encodeURIComponent(path)}`, vaultNoteContentSchema),
+
+  /** POST /vault/daily-report — append the fleet report to today's note. */
+  writeDailyReport: (): Promise<DailyReportResult> =>
+    postValidated("/vault/daily-report", undefined, dailyReportResultSchema),
 };
 
 // Live updates: the bot fleet streams over ws://…/api/v1/ws (src/lib/ws.ts).

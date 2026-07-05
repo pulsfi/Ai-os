@@ -30,6 +30,7 @@ export const qk = {
   marketTrending: ["market", "trending"] as const,
   marketStatus: ["market", "status"] as const,
   marketToken: (address: string) => ["market", "token", address] as const,
+  tokenActivity: (mint: string) => ["market", "activity", mint] as const,
   marketHistory: (address: string) => ["market", "history", address] as const,
   chatStatus: ["chat", "status"] as const,
   pumpfunNew: ["pumpfun", "new"] as const,
@@ -111,6 +112,17 @@ export function useMarketHistory(address: string, limit = 100) {
     queryFn: () => marketService.getHistory(address, limit),
     enabled: address.length > 0,
     retry: false, // history requires PostgreSQL; surface that immediately
+  });
+}
+
+/** Live buy/sell flow via Helius — enabled when a mint is entered. */
+export function useTokenActivity(mint: string) {
+  return useQuery({
+    queryKey: qk.tokenActivity(mint),
+    queryFn: () => marketService.getActivity(mint),
+    enabled: mint.length > 0,
+    retry: false, // "not configured" should surface once, immediately
+    refetchInterval: 30_000,
   });
 }
 
@@ -202,6 +214,17 @@ export function useChatStatus() {
     queryKey: qk.chatStatus,
     queryFn: chatService.getStatus,
     staleTime: 60_000,
+  });
+}
+
+/** Write today's fleet report into the daily note; refresh note lists. */
+export function useWriteDailyReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: vaultService.writeDailyReport,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["vault"] });
+    },
   });
 }
 
