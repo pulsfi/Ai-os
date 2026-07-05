@@ -1,13 +1,8 @@
 "use client";
 
 /**
- * Memory — what the system has learned, read from the only live source
- * that exists today: the agents' Reports (via /agents/{name}/reports).
- *
- * The vault's dedicated memory notes (10 Memory/, Training Log) are not
- * exposed by the backend yet — that requires the /vault endpoints
- * (TODO(api) in backend/api/router.py). This page says so honestly
- * instead of inventing content.
+ * Memory — what the system has learned: vault memory notes (live via the
+ * read-only /vault bridge) + per-agent report activity (/agents).
  */
 import { BrainCircuit, FileText } from "lucide-react";
 
@@ -21,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
+import { VaultNotesCard } from "@/components/memory/vault-notes-card";
 import { useAgents } from "@/hooks/use-backend";
 
 export function MemoryOverview() {
@@ -28,6 +24,7 @@ export function MemoryOverview() {
 
   return (
     <div className="space-y-4">
+      <VaultNotesCard />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Knowledge held per agent</CardTitle>
@@ -69,21 +66,6 @@ export function MemoryOverview() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Vault memory notes</CardTitle>
-          <CardDescription>Training Log, lessons, and long-term memory</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            The vault&apos;s memory notes (<span className="font-mono">10 Memory/</span>,
-            Training Log) are not exposed by the backend yet — the{" "}
-            <span className="font-mono">/vault</span> endpoints are the next backend
-            milestone. Until then, open them directly in Obsidian. No placeholder
-            data is shown here by design.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   );
 }

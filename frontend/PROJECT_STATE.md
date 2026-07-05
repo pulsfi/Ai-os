@@ -257,11 +257,41 @@ no keys, no signing anywhere in the module tree (Stage 5 gate intact).
 - tsc + eslint clean; `next build` passes; Trading page renders the
   performance card.
 
-## ⏭️ Next — Milestone 7
+## ✅ Milestone 7 — Helius, strategy tuning, vault bridge (done 2026-07-05)
 
-- Let the track record accumulate; tune strategy filters from the data
-  (graduate is losing — entry at 100% progress is too late; consider
-  85–98% band).
-- Backend /vault endpoints (Memory page's remaining section).
-- Photon integration: pending the user's API keys — no public API exists,
-  so nothing is stubbed.
+### Helius plugged in
+
+- User's Helius API key added to `backend/.env` and `09 Automation/.env`
+  (both gitignored — the key is NOT in the repo). The existing `rpc_url`
+  property upgrade kicked in: RPC client now runs 2 endpoints (Helius
+  primary + public fallback). Verified live: /solana/status served by
+  `mainnet.helius-rpc.com`.
+
+### Data-driven strategy fix
+
+- Graduation Rider's first track record (0/3, -$2.43) showed entries at
+  99.9–100% bonding progress buy the top. Entry is now a BAND: 85–98.5%.
+  Regression test locks the lesson in (`TooLate`/`AtTop` coins rejected).
+
+### Vault bridge (backend `modules/vault/`)
+
+- Read-only notes API over an ALLOWLIST of folders (10 Memory, 12 Daily
+  Notes, 00 Dashboard): `GET /vault/dirs`, `/vault/notes?dir=`,
+  `/vault/note?path=`. Containment enforced in one place — traversal,
+  absolute paths, non-.md, and non-allowlisted folders all 404
+  (parametrized security tests; the vault holds .env files, so this is
+  the highest-stakes surface). Tests: 79/79.
+
+### Frontend
+
+- **Memory page** now browses real vault notes: folder tabs from
+  /vault/dirs, note list (newest first), full markdown viewer — Training
+  Log and Memory Hub render live. Honest-empty-state card removed
+  because the real thing exists now.
+
+## ⏭️ Next — Milestone 8
+
+- Track record review after the tuned band runs for a day; consider a
+  Helius Enhanced API provider (tx-level data) now that the key works.
+- Daily-note writer: let the Documentation Agent write bot performance
+  into `12 Daily Notes/` (first vault WRITE path — needs care).

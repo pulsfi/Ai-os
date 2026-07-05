@@ -125,8 +125,11 @@ class NewLaunchSniper(Strategy):
 class GraduationMomentum(Strategy):
     """Buys coins close to graduating off the pump.fun bonding curve.
 
-    Graduation (Raydium listing) is the classic momentum event; entering
-    at >=85% progress rides the final push. Skips already-complete coins.
+    Graduation (Raydium listing) is the classic momentum event. Entry is
+    a BAND, not a floor: the first live track record (2026-07-04, 0/3,
+    -$2.43) showed that entries at 99.9-100% progress are too late — the
+    pump is already priced in. 85-98.5% rides the final push instead of
+    buying its top. Skips already-complete coins.
     """
 
     name = "graduation_momentum"
@@ -136,9 +139,11 @@ class GraduationMomentum(Strategy):
         pumpfun: PumpFunClient,
         market: MarketManager,
         min_progress_pct: float = 85.0,
+        max_progress_pct: float = 98.5,
     ) -> None:
         super().__init__(pumpfun, market)
         self._min_progress = min_progress_pct
+        self._max_progress = max_progress_pct
 
     async def find_entries(self, held_mints: set[str], slots: int) -> list[EntrySignal]:
         coins = await self._pumpfun.get_graduating(limit=30)
@@ -151,7 +156,7 @@ class GraduationMomentum(Strategy):
                 coin.mint in held_mints
                 or coin.complete
                 or price is None
-                or coin.bonding_progress_pct < self._min_progress
+                or not (self._min_progress <= coin.bonding_progress_pct <= self._max_progress)
             ):
                 continue
             signals.append(

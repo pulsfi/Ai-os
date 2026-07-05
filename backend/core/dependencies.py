@@ -25,6 +25,7 @@ from modules.market import MarketManager, get_market_manager
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
 from modules.solana import RpcClient, get_rpc_client
 from modules.trading import PaperTradingService, get_paper_trading_service
+from modules.vault import VaultService, get_vault_service
 from services.health import HealthService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -82,6 +83,11 @@ def get_bots(settings: SettingsDep) -> BotManager:
     return get_bot_manager(settings)
 
 
+def get_vault(settings: SettingsDep) -> VaultService:
+    """Provide the read-only vault notes bridge."""
+    return get_vault_service(settings)
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
@@ -92,3 +98,4 @@ AgentsServiceDep = Annotated[AgentsService, Depends(get_agents)]
 PumpFunDep = Annotated[PumpFunClient, Depends(get_pumpfun)]
 PaperTradingDep = Annotated[PaperTradingService, Depends(get_paper_trading)]
 BotManagerDep = Annotated[BotManager, Depends(get_bots)]
+VaultServiceDep = Annotated[VaultService, Depends(get_vault)]

@@ -337,3 +337,23 @@ export const fleetSnapshotSchema = z.object({
 });
 
 export type FleetSnapshot = z.infer<typeof fleetSnapshotSchema>;
+
+// --- vault notes (read-only) ---------------------------------------------
+
+export const vaultNoteSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  modified: z.string(),
+  size_bytes: z.number(),
+});
+
+export type VaultNote = z.infer<typeof vaultNoteSchema>;
+
+export const vaultNoteContentSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  content: z.string(),
+  modified: z.string(),
+});
+
+export type VaultNoteContent = z.infer<typeof vaultNoteContentSchema>;

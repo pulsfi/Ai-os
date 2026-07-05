@@ -45,6 +45,10 @@ import {
   type TokenAuthorities,
   type TokenInfo,
   type TokenMarketData,
+  type VaultNote,
+  type VaultNoteContent,
+  vaultNoteContentSchema,
+  vaultNoteSchema,
 } from "./schemas";
 import { z } from "zod";
 
@@ -176,7 +180,19 @@ export const agentsService = {
     ),
 };
 
-// TODO(backend): WebSocket endpoints for live updates (agent status, logs,
-// system metrics, trading events) do not exist yet. When they land, add a
-// typed socket client here (src/lib/ws.ts) and replace the polling intervals
-// in src/hooks with subscriptions. Per project rule: no fake implementations.
+export const vaultService = {
+  /** GET /vault/dirs — folders the backend exposes (allowlist). */
+  dirs: (): Promise<string[]> => getValidated("/vault/dirs", z.array(z.string())),
+
+  /** GET /vault/notes — markdown notes in one folder, newest first. */
+  notes: (dir: string): Promise<VaultNote[]> =>
+    getValidated(`/vault/notes?dir=${encodeURIComponent(dir)}`, z.array(vaultNoteSchema)),
+
+  /** GET /vault/note — one note's full markdown. */
+  note: (path: string): Promise<VaultNoteContent> =>
+    getValidated(`/vault/note?path=${encodeURIComponent(path)}`, vaultNoteContentSchema),
+};
+
+// Live updates: the bot fleet streams over ws://…/api/v1/ws (src/lib/ws.ts).
+// Other domains (agents, chat presence, system metrics) still poll — extend
+// the WS payload before adding sockets for them. No fake implementations.

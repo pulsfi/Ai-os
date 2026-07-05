@@ -1,13 +1,17 @@
-"""Vault module — bridge between the platform and the Obsidian vault.
+"""Vault module — read-only bridge to the Obsidian vault's markdown notes.
 
-The vault (repo root) is the knowledge layer: agents read their missions
-from it and write their reports back to it. This module is the ONLY code
-allowed to touch vault files, so note conventions (frontmatter, wikilinks)
-are enforced in exactly one place.
+The vault (repo root) is the knowledge layer. This module is the ONLY
+backend code allowed to touch vault files, so path safety (allowlist +
+containment) is enforced in exactly one place.
 
-TODO(vault): VaultReader — list notes, read note, parse frontmatter.
+Public surface:
+    VaultService, get_vault_service
+
 TODO(vault): VaultWriter — write/update notes preserving frontmatter,
-             append to agent report logs.
+             append to agent report logs (needed for Stage 6 automation).
 TODO(vault): wikilink integrity checker (port of the ad-hoc link audit).
-TODO(vault): expose read-only notes API at /api/v1/vault.
 """
+
+from modules.vault.vault_service import VaultService, get_vault_service
+
+__all__ = ["VaultService", "get_vault_service"]

@@ -17,6 +17,7 @@ import {
   solanaService,
   systemService,
   tradingService,
+  vaultService,
 } from "@/lib/api/services";
 
 /** Query keys — centralized so invalidation stays typo-proof. */
@@ -38,6 +39,9 @@ export const qk = {
   bots: ["bots"] as const,
   botTrades: (botId: string | null) => ["bots", "trades", botId ?? "all"] as const,
   botPerformance: ["bots", "performance"] as const,
+  vaultDirs: ["vault", "dirs"] as const,
+  vaultNotes: (dir: string) => ["vault", "notes", dir] as const,
+  vaultNote: (path: string) => ["vault", "note", path] as const,
   agents: ["agents"] as const,
   agent: (name: string) => ["agents", name] as const,
   agentReports: (name: string) => ["agents", name, "reports"] as const,
@@ -198,6 +202,30 @@ export function useChatStatus() {
     queryKey: qk.chatStatus,
     queryFn: chatService.getStatus,
     staleTime: 60_000,
+  });
+}
+
+export function useVaultDirs() {
+  return useQuery({
+    queryKey: qk.vaultDirs,
+    queryFn: vaultService.dirs,
+    staleTime: 5 * 60_000, // the allowlist changes only with deployments
+  });
+}
+
+export function useVaultNotes(dir: string) {
+  return useQuery({
+    queryKey: qk.vaultNotes(dir),
+    queryFn: () => vaultService.notes(dir),
+    enabled: dir.length > 0,
+  });
+}
+
+export function useVaultNote(path: string) {
+  return useQuery({
+    queryKey: qk.vaultNote(path),
+    queryFn: () => vaultService.note(path),
+    enabled: path.length > 0,
   });
 }
 

@@ -98,6 +98,23 @@ class StubPumpFun:
         raise AssertionError("not found")
 
 
+async def test_graduation_entry_band_excludes_late_entries() -> None:
+    """Regression for the 2026-07-04 track record: 100%-progress entries
+    lost 0/3 — the band must exclude coins that already graduated."""
+    from modules.bots.strategies import GraduationMomentum
+
+    coins = [
+        pump_coin("TooEarly", 50_000, progress=60.0),
+        pump_coin("InBand", 50_000, progress=92.0),
+        pump_coin("TooLate", 50_000, progress=99.9),
+        pump_coin("AtTop", 50_000, progress=100.0),
+        pump_coin("Complete", 50_000, progress=100.0, complete=True),
+    ]
+    strat = GraduationMomentum(StubPumpFun(coins), market=None)  # type: ignore[arg-type]
+    signals = await strat.find_entries(held_mints=set(), slots=5)
+    assert [s.mint for s in signals] == ["InBand"]
+
+
 async def test_sniper_filters_and_prices() -> None:
     coins = [
         pump_coin("Fresh1", 10_000),                 # good
