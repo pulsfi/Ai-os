@@ -33,7 +33,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { executionService } from "@/lib/api/services";
 import { ApiError } from "@/lib/api/client";
+import { useLiveTrades, useRecordTrade } from "@/hooks/use-backend";
 import { phantom } from "@/lib/phantom";
+import { timeAgo } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 function shorten(addr: string): string {
   return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
@@ -61,6 +64,8 @@ export function WalletTradePanel() {
   const [usd, setUsd] = React.useState("10");
   const [busy, setBusy] = React.useState<null | "buy" | "sell">(null);
   const [lastSig, setLastSig] = React.useState<string | null>(null);
+  const recordTrade = useRecordTrade();
+  const liveTrades = useLiveTrades();
 
   const refreshBalance = React.useCallback(async (addr: string) => {
     try {
@@ -100,6 +105,16 @@ export function WalletTradePanel() {
       const signature = await phantom.signAndSend(built.swap_transaction_b64);
       setLastSig(signature);
       toast.success("Trade submitted on-chain");
+      // Record it so the backend reconciles the fill on-chain and it shows
+      // up in the live-trade history + alerts.
+      recordTrade.mutate({
+        signature,
+        wallet: pubkey,
+        mint: target,
+        symbol: "",
+        side,
+        usd_size: side === "buy" ? Number(usd) : 0,
+      });
       void refreshBalance(pubkey);
     } catch (err) {
       const msg =
@@ -233,6 +248,50 @@ export function WalletTradePanel() {
               >
                 View last trade on Solscan <ExternalLink className="size-3.5" />
               </a>
+            )}
+
+            {/* real-trade history, reconciled on-chain */}
+            {liveTrades.data && liveTrades.data.length > 0 && (
+              <div className="space-y-1.5 border-t pt-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Your live trades
+                </p>
+                {liveTrades.data.slice(0, 6).map((t) => (
+                  <a
+                    key={t.id}
+                    href={`https://solscan.io/tx/${t.signature}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between gap-2 rounded-lg border p-2 text-xs hover:bg-muted/40"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "uppercase",
+                          t.side === "buy" ? "text-emerald-400" : "text-red-400",
+                        )}
+                      >
+                        {t.side}
+                      </span>
+                      <span className="font-mono">{t.symbol || `${t.mint.slice(0, 6)}…`}</span>
+                      {t.usd_size > 0 && <span className="text-muted-foreground">${t.usd_size.toFixed(0)}</span>}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded px-1.5 py-0.5 text-[10px]",
+                          t.status === "confirmed" && "bg-emerald-500/15 text-emerald-400",
+                          t.status === "failed" && "bg-red-500/15 text-red-400",
+                          t.status === "submitted" && "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {t.status}
+                      </span>
+                      <span className="text-muted-foreground">{timeAgo(t.submitted_ts)}</span>
+                    </span>
+                  </a>
+                ))}
+              </div>
             )}
           </>
         )}

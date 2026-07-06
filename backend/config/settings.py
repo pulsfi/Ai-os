@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
 
+    # --- alerts (Telegram; empty = in-app feed only) ---
+    telegram_bot_token: str = ""  # from @BotFather
+    telegram_chat_id: str = ""  # your chat/channel id
+
     # --- AI chat (Claude API; key-gated like the market providers) ---
     anthropic_api_key: str = ""  # empty = chat endpoint reports "not configured"
     anthropic_model: str = "claude-opus-4-8"
@@ -109,6 +113,7 @@ class Settings(BaseSettings):
     manual_trade_max_usd: float = 100.0
     # Exposure guard: cap total real USD bought via the wallet per UTC day.
     manual_daily_buy_limit_usd: float = 500.0
+    live_trades_db_path: str = "data/live_trades.db"  # real-trade record, rel. backend/
     # Go-live readiness gates (all must pass before live is justifiable).
     golive_min_closed_trades: int = 50
     golive_min_win_rate_pct: float = 55.0

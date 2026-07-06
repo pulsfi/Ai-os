@@ -504,13 +504,25 @@ each agent queries live data / live system state and emits a real result.
 - Tests: 139/139. Verified live: live blocked at the plausibility +
   track-length gates; reset produced a clean 0-trade scorecard.
 
+### Done (2026-07-06, second pass)
+
+- **#5 Fill reconciliation** — `modules/execution/live_ledger.py`: real
+  Phantom-signed trades are recorded (`POST /execution/trade/record`) and
+  reconciled against the chain via RPC `getSignatureStatuses`
+  (submitted → confirmed/failed). `GET /execution/trades` reconciles any
+  pending. The wallet panel records every trade automatically and shows a
+  live-trade history with status + Solscan links. Read-only chain access.
+- **#7 Alerts** — `modules/alerts`: an in-app ring buffer (works with
+  zero config) that also pushes to Telegram when `TELEGRAM_BOT_TOKEN` +
+  `TELEGRAM_CHAT_ID` are set. Emits on kill switch, PAPER⇄LIVE switch,
+  and every real trade. `GET /alerts`, `POST /alerts/test`. Dashboard
+  AlertsCard shows the feed, toasts new alerts, has a Test button.
+- Tests: 150/150 (11 new: live-ledger confirm/fail/pending/reconcile/
+  idempotent/error-safe, alert buffer + endpoints + kill-switch alert).
+
 ### Remaining Stage 7
 
-- **#3 Bot signing path** — the real autonomous-live work: wallet from a
-  secure store, tx build/sign/send with priority fees, confirmation +
-  reconciliation, tiny-size ramp. This is what the Live switch ultimately
-  unlocks; deliberately still unbuilt.
-- **#5 Fill reconciliation** — read real Phantom-trade results on-chain
-  back into a ledger.
-- **#6 Strategy tuning round 2** — retune from the honest record.
-- **#7 Alerts** — Telegram/desktop pings on big moves / errors / kill.
+- **#3 Bot signing path** — the real autonomous-live work (secure wallet,
+  tx build/sign/send, priority fees, tiny-size ramp). Still gated.
+- **#6 Strategy tuning round 2** — retune from the now-honest record
+  (needs a few days of clean data first).

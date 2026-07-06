@@ -24,6 +24,7 @@ from modules.agents import (
     get_agent_runtime,
     get_agents_service,
 )
+from modules.alerts import AlertService, get_alert_service
 from modules.bots import BotManager, get_bot_manager
 from modules.chat import ChatService, get_chat_service
 from modules.execution import (
@@ -34,6 +35,7 @@ from modules.execution import (
     get_risk_engine,
     get_swap_builder,
 )
+from modules.execution.live_ledger import LiveTradeService, get_live_trade_service
 from modules.market import MarketManager, get_market_manager
 from modules.market.helius import HeliusClient, get_helius_client
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
@@ -127,6 +129,16 @@ def get_swaps(settings: SettingsDep) -> ManualSwapBuilder:
     )
 
 
+def get_live_trades(settings: SettingsDep) -> LiveTradeService:
+    """Provide the real-trade ledger (records + reconciles Phantom trades)."""
+    return get_live_trade_service(settings, get_rpc_client(settings))
+
+
+def get_alerts(settings: SettingsDep) -> AlertService:
+    """Provide the alert service (in-app feed + optional Telegram)."""
+    return get_alert_service(settings)
+
+
 def get_helius(settings: SettingsDep) -> HeliusClient:
     """Provide the Helius Enhanced Transactions client (key-gated)."""
     return get_helius_client(settings)
@@ -148,3 +160,5 @@ HeliusDep = Annotated[HeliusClient, Depends(get_helius)]
 RiskEngineDep = Annotated[RiskEngine, Depends(get_risk)]
 ExecutorDep = Annotated[DryRunExecutor, Depends(get_exec)]
 SwapBuilderDep = Annotated[ManualSwapBuilder, Depends(get_swaps)]
+LiveTradesDep = Annotated[LiveTradeService, Depends(get_live_trades)]
+AlertsDep = Annotated[AlertService, Depends(get_alerts)]

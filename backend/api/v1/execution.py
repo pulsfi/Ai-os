@@ -10,9 +10,13 @@ from typing import Literal
 
 from fastapi import APIRouter
 
+from fastapi import Query
+
 from core.dependencies import (
+    AlertsDep,
     BotManagerDep,
     ExecutorDep,
+    LiveTradesDep,
     RiskEngineDep,
     SettingsDep,
     SolanaClientDep,
@@ -25,8 +29,10 @@ from models.schemas.execution import (
     ExecutionMode,
     ExecutionStatus,
     GoLiveReadiness,
+    LiveTrade,
     OrderRequest,
     OrderResult,
+    RecordTradeRequest,
     WalletBalance,
 )
 from modules.execution import evaluate_readiness
@@ -67,11 +73,17 @@ async def go_live_readiness(bots: BotManagerDep, settings: SettingsDep) -> GoLiv
 
 @router.post("/kill/{state}", response_model=ExecutionStatus)
 async def set_kill_switch(
-    state: str, risk: RiskEngineDep, settings: SettingsDep
+    state: str, risk: RiskEngineDep, settings: SettingsDep, alerts: AlertsDep
 ) -> ExecutionStatus:
     """Engage ('on') or release ('off') the global halt. Safe either way —
     it can only stop execution, never begin it."""
-    risk.set_kill_switch(state == "on")
+    on = state == "on"
+    risk.set_kill_switch(on)
+    alerts.emit(
+        "critical" if on else "info",
+        "Kill switch " + ("engaged" if on else "released"),
+        "All execution halted." if on else "Execution resumed to its prior mode.",
+    )
     return await execution_status(risk, settings)
 
 
@@ -81,6 +93,7 @@ async def set_trading_mode(
     risk: RiskEngineDep,
     bots: BotManagerDep,
     settings: SettingsDep,
+    alerts: AlertsDep,
 ) -> ExecutionStatus:
     """Switch PAPER ⇄ LIVE.
 
@@ -91,6 +104,7 @@ async def set_trading_mode(
     via the wallet panel."""
     if mode == "paper":
         risk.set_armed(False)
+        alerts.emit("info", "Switched to PAPER", "Execution disarmed — safe simulation.")
         return await execution_status(risk, settings)
 
     fleet = next((p for p in bots.performance() if p.bot_id == "fleet"), None)
@@ -102,6 +116,11 @@ async def set_trading_mode(
             details={"failing": failing},
         )
     risk.set_armed(True)
+    alerts.emit(
+        "critical", "Switched to LIVE",
+        "Execution armed. Autonomous bots still have no signing path; real "
+        "trades remain human-approved via the wallet.",
+    )
     return await execution_status(risk, settings)
 
 
@@ -134,3 +153,28 @@ async def build_buy(body: BuildBuyRequest, swaps: SwapBuilderDep) -> BuiltSwap:
 async def build_sell(body: BuildSellRequest, swaps: SwapBuilderDep) -> BuiltSwap:
     """Build an UNSIGNED token→SOL sell (full balance) for the user to approve."""
     return await swaps.build_sell(body.user_pubkey, body.mint)
+
+
+@router.post("/trade/record", response_model=LiveTrade)
+async def record_trade(
+    body: RecordTradeRequest, live: LiveTradesDep, alerts: AlertsDep
+) -> LiveTrade:
+    """Record a Phantom-signed trade + reconcile it against the chain.
+
+    Called by the frontend with the signature Phantom returned. The
+    backend confirms the trade landed (read-only) — it never signs."""
+    trade = await live.record(body)
+    alerts.emit(
+        "warning" if trade.status == "failed" else "info",
+        f"Real {trade.side} · {trade.symbol or trade.mint[:6]}",
+        f"${trade.usd_size:.2f} — {trade.status} ({trade.signature[:8]}…)",
+    )
+    return trade
+
+
+@router.get("/trades", response_model=list[LiveTrade])
+async def live_trades(
+    live: LiveTradesDep, limit: int = Query(default=50, ge=1, le=200)
+) -> list[LiveTrade]:
+    """Your real wallet trades, newest first (pending ones get reconciled)."""
+    return await live.list_trades(limit)

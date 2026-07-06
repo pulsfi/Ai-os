@@ -481,3 +481,36 @@ export const builtSwapSchema = z.object({
 });
 
 export type BuiltSwap = z.infer<typeof builtSwapSchema>;
+
+export const liveTradeSchema = z.object({
+  id: z.number(),
+  signature: z.string(),
+  wallet: z.string(),
+  mint: z.string(),
+  symbol: z.string(),
+  side: z.string(),
+  usd_size: z.number(),
+  status: z.string(),
+  submitted_ts: z.string(),
+  confirmed_ts: z.string().nullable(),
+});
+
+export type LiveTrade = z.infer<typeof liveTradeSchema>;
+
+// --- alerts ------------------------------------------------------------------
+
+export const alertSchema = z.object({
+  level: z.enum(["info", "warning", "critical"]),
+  title: z.string(),
+  message: z.string(),
+  ts: z.string(),
+});
+
+export type Alert = z.infer<typeof alertSchema>;
+
+export const alertsStatusSchema = z.object({
+  telegram_configured: z.boolean(),
+  alerts: z.array(alertSchema),
+});
+
+export type AlertsStatus = z.infer<typeof alertsStatusSchema>;

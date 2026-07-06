@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   agentsService,
+  alertsService,
   botsService,
   chatService,
   executionService,
@@ -196,6 +197,44 @@ export function useKillSwitch() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["execution"] });
     },
+  });
+}
+
+/** Your real (Phantom-signed) wallet trades, reconciled on-chain. */
+export function useLiveTrades() {
+  return useQuery({
+    queryKey: ["execution", "trades"] as const,
+    queryFn: executionService.liveTrades,
+    refetchInterval: 15_000,
+  });
+}
+
+/** Record a Phantom-signed trade so it gets reconciled + shown. */
+export function useRecordTrade() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: executionService.recordTrade,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["execution", "trades"] });
+      void queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    },
+  });
+}
+
+/** Recent alerts feed (in-app; Telegram fires too when configured). */
+export function useAlerts() {
+  return useQuery({
+    queryKey: ["alerts"] as const,
+    queryFn: alertsService.list,
+    refetchInterval: 12_000,
+  });
+}
+
+export function useTestAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: alertsService.test,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["alerts"] }),
   });
 }
 

@@ -19,6 +19,7 @@ from core.logging import setup_logging
 from database.engine import dispose_engine
 from database.redis_client import close_redis
 from modules.agents import close_agent_runtime, get_agent_runtime
+from modules.alerts import close_alerts
 from modules.bots import close_bot_manager, get_bot_manager
 from modules.chat import close_chat_service
 from modules.execution import close_executor, close_swap_builder
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         get_agent_runtime(settings).start()
     yield
     await close_agent_runtime()
+    await close_alerts()
     if report_scheduler is not None:
         await report_scheduler.stop()
     if scheduler is not None:

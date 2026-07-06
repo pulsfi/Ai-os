@@ -48,16 +48,22 @@ import {
   type PaperTrade,
   type PumpCoin,
   type SystemInfo,
+  alertSchema,
+  alertsStatusSchema,
   builtSwapSchema,
   dailyReportResultSchema,
   executionStatusSchema,
   goLiveReadinessSchema,
+  liveTradeSchema,
   tokenActivitySchema,
   walletBalanceSchema,
+  type Alert,
+  type AlertsStatus,
   type BuiltSwap,
   type DailyReportResult,
   type ExecutionStatus,
   type GoLiveReadiness,
+  type LiveTrade,
   type TokenActivity,
   type WalletBalance,
   type TokenAuthorities,
@@ -211,6 +217,27 @@ export const executionService = {
       { user_pubkey: userPubkey, mint },
       builtSwapSchema,
     ),
+
+  /** POST /execution/trade/record — record + reconcile a Phantom-signed trade. */
+  recordTrade: (t: {
+    signature: string;
+    wallet: string;
+    mint: string;
+    symbol: string;
+    side: "buy" | "sell";
+    usd_size: number;
+  }): Promise<LiveTrade> => postValidated("/execution/trade/record", t, liveTradeSchema),
+
+  /** GET /execution/trades — your real wallet trades, newest first. */
+  liveTrades: (): Promise<LiveTrade[]> =>
+    getValidated("/execution/trades", z.array(liveTradeSchema)),
+};
+
+export const alertsService = {
+  /** GET /alerts — recent alerts + telegram config flag. */
+  list: (): Promise<AlertsStatus> => getValidated("/alerts", alertsStatusSchema),
+  /** POST /alerts/test — emit a test alert. */
+  test: (): Promise<Alert> => postValidated("/alerts/test", undefined, alertSchema),
 };
 
 export const chatService = {

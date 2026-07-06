@@ -192,6 +192,20 @@ class RpcClient:
             decimals = int(info["decimals"])
         return total, decimals
 
+    async def get_signature_status(self, signature: str) -> tuple[str | None, bool]:
+        """(confirmation_status, failed) for one transaction signature.
+
+        confirmation_status is 'processed'|'confirmed'|'finalized' or None
+        (not yet seen / dropped). `failed` is True when the tx landed with
+        an error. Read-only — this only observes, never signs."""
+        r = await self.call(
+            "getSignatureStatuses", [[signature], {"searchTransactionHistory": True}]
+        )
+        value = ((r or {}).get("value") or [None])[0]
+        if value is None:
+            return None, False
+        return value.get("confirmationStatus"), value.get("err") is not None
+
     async def get_chain_status(self) -> ChainStatus:
         """Aggregate snapshot; individual probe failures degrade, never raise."""
 

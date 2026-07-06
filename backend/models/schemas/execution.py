@@ -105,6 +105,32 @@ class BuiltSwap(BaseModel):
     )
 
 
+class RecordTradeRequest(BaseModel):
+    """A real, Phantom-signed trade the frontend just submitted."""
+
+    signature: str = Field(min_length=32, max_length=128)
+    wallet: str = Field(min_length=32, max_length=44)
+    mint: str = Field(min_length=32, max_length=44)
+    symbol: str = Field(default="", max_length=32)
+    side: str = Field(pattern="^(buy|sell)$")
+    usd_size: float = Field(ge=0)
+
+
+class LiveTrade(BaseModel):
+    """One real wallet trade, reconciled against the chain."""
+
+    id: int
+    signature: str
+    wallet: str
+    mint: str
+    symbol: str
+    side: str
+    usd_size: float
+    status: str  # submitted | confirmed | failed
+    submitted_ts: str
+    confirmed_ts: str | None = None
+
+
 class ReadinessCriterion(BaseModel):
     """One go-live gate: where the paper record stands vs the target."""
 

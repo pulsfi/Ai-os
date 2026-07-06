@@ -1,5 +1,6 @@
 import { LayoutDashboard } from "lucide-react";
 
+import { AlertsCard } from "@/components/dashboard/alerts-card";
 import { ChainStatusCard } from "@/components/dashboard/chain-status-card";
 import { MarketStatusCard } from "@/components/dashboard/market-status-card";
 import { SystemHealthCard } from "@/components/dashboard/system-health-card";
@@ -37,8 +38,11 @@ export default function DashboardPage() {
         <FadeIn delay={0.1} className="lg:col-span-2">
           <WatchlistCard />
         </FadeIn>
-        <FadeIn delay={0.15} className="lg:col-span-2">
+        <FadeIn delay={0.15}>
           <MarketStatusCard />
+        </FadeIn>
+        <FadeIn delay={0.2}>
+          <AlertsCard />
         </FadeIn>
       </div>
     </section>
