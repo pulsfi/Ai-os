@@ -190,6 +190,8 @@ export const botsService = {
       trail_after_pct: number;
       trail_drop_pct: number;
       interval_s: number;
+      exit_slippage_bps: number;
+      max_gain_pct: number;
     }>,
   ): Promise<BotStatus> =>
     patchValidated(`/bots/${encodeURIComponent(botId)}/config`, update, botStatusSchema),

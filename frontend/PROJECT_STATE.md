@@ -531,11 +531,26 @@ each agent queries live data / live system state and emits a real result.
   (Actual data-driven *retuning* still waits for the freshly-reset record
   to build a few clean days.)
 
+### Fix (2026-07-06) — per-bot pricing + strategy selectivity
+
+The single 2% exit haircut was too blunt: it destroyed the Trend
+Scalper's 3%-margin trades (turning wins into losses) while barely
+mattering to the Sniper. Also the Sniper was genuinely negative
+(15% win rate, capped winners can't beat 85% losers).
+
+- **Slippage/cap are now per-bot** (`BotConfig.exit_slippage_bps` +
+  `max_gain_pct`, tunable in the UI): trend 0.25% (liquid watchlist),
+  graduate 1%, sniper 1.5% + 300% cap (fat-tail wins). The runner reads
+  config; explicit constructor args still override (tests).
+- **Sniper is far more selective** — entry now needs ≥8 swaps, ≥6
+  wallets, ≥65% buy ratio, mcap $8k–45k (was 3/3/55%). Fewer, higher-
+  conviction trades to lift the win rate. Stop tightened 25%→18%.
+- Wiped the 97 broken-pricing trades for a clean record.
+- Tests: 153/153.
+
 ### Remaining Stage 7
 
-- **#3 Bot signing path** — the real autonomous-live work (secure wallet,
-  tx build/sign/send, priority fees, tiny-size ramp). DELIBERATELY still
-  gated: it needs a backend-held key + a proven track record, and the
-  scorecard is red (0 trades since the honest-pricing reset). Not built.
-- **#6 retune** — adjust parameters from the honest record once it has a
-  few days of clean data. The tuning UI above is now ready for it.
+- **#3 Bot signing path** — DELIBERATELY gated: needs a backend key + a
+  PROVEN record. The paper record is still forming; nothing proves an
+  edge yet. Not built.
+- **#6 retune** — continue from the honest record as clean days accrue.

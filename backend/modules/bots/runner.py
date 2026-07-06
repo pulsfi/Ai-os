@@ -27,14 +27,16 @@ class BotRunner:
         config: BotConfig,
         strategy: Strategy,
         ledger: BotLedger,
-        exit_slippage_bps: int = 200,
-        max_gain_pct: float = 100.0,
+        exit_slippage_bps: int | None = None,
+        max_gain_pct: float | None = None,
     ) -> None:
         self.config = config
         self._strategy = strategy
         self._ledger = ledger
-        self._exit_slippage_bps = exit_slippage_bps
-        self._max_gain_pct = max_gain_pct
+        # Explicit args win (tests); otherwise use the bot's own config so
+        # slippage/cap are per-bot and tunable at runtime.
+        self._slippage_override = exit_slippage_bps
+        self._gain_override = max_gain_pct
         self._task: asyncio.Task[None] | None = None
         self._state = BotState.STOPPED
         self._started_at: str | None = None
@@ -167,13 +169,23 @@ class BotRunner:
     def _realistic_exit(self, entry_price: float, mark: float) -> tuple[float, str]:
         """Model a realizable fill: a slippage haircut on every exit, and a
         per-trade gain cap (you can't dump a fresh illiquid launch at an
-        overshot mark). Returns (exit_price, note_suffix)."""
-        exit_price = mark * (1 - self._exit_slippage_bps / 10_000)
+        overshot mark). Slippage/cap are per-bot. Returns (exit_price, note)."""
+        slippage = (
+            self._slippage_override
+            if self._slippage_override is not None
+            else self.config.exit_slippage_bps
+        )
+        max_gain = (
+            self._gain_override
+            if self._gain_override is not None
+            else self.config.max_gain_pct
+        )
+        exit_price = mark * (1 - slippage / 10_000)
         suffix = ""
-        cap_price = entry_price * (1 + self._max_gain_pct / 100)
+        cap_price = entry_price * (1 + max_gain / 100)
         if exit_price > cap_price:
             exit_price = cap_price
-            suffix = f" · capped +{self._max_gain_pct:.0f}%"
+            suffix = f" · capped +{max_gain:.0f}%"
         return exit_price, suffix
 
     def _close(

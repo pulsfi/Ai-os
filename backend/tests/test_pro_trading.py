@@ -158,10 +158,11 @@ def fresh_launch_sniper(helius: object) -> NewLaunchSniper:
 
 
 async def test_sniper_enters_on_confirmed_flow() -> None:
-    sniper = fresh_launch_sniper(StubHelius(activity(buys=6, sells=2, wallets=5)))
+    # Meets the tightened bar: >=8 swaps, >=6 wallets, >=65% buys.
+    sniper = fresh_launch_sniper(StubHelius(activity(buys=8, sells=2, wallets=7)))
     signals = await sniper.find_entries(set(), 3)
     assert len(signals) == 1
-    assert "flow 75.0% buys" in signals[0].note
+    assert "flow 80.0% buys" in signals[0].note
 
 
 async def test_sniper_skips_sell_pressure() -> None:

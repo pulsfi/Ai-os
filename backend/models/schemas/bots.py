@@ -34,6 +34,11 @@ class BotConfig(BaseModel):
     # instead of round-tripping back to the fixed stop.
     trail_after_pct: float | None = Field(default=None, gt=0)
     trail_drop_pct: float | None = Field(default=None, gt=0)
+    # Per-bot honest-pricing model (liquid tokens ≈ 0 slippage; illiquid
+    # pump.fun launches take a real haircut). Kept per-bot because a 2%
+    # haircut that's fine for a sniper destroys a 3%-margin scalper.
+    exit_slippage_bps: int = Field(default=100, ge=0, le=1000)
+    max_gain_pct: float = Field(default=100.0, gt=0)
 
 
 class BotConfigUpdate(BaseModel):
@@ -49,6 +54,8 @@ class BotConfigUpdate(BaseModel):
     trail_after_pct: float | None = Field(default=None, gt=0, le=1000)
     trail_drop_pct: float | None = Field(default=None, gt=0, le=100)
     interval_s: float | None = Field(default=None, ge=2, le=3600)
+    exit_slippage_bps: int | None = Field(default=None, ge=0, le=1000)
+    max_gain_pct: float | None = Field(default=None, gt=0, le=100000)
 
 
 class BotStatus(BaseModel):

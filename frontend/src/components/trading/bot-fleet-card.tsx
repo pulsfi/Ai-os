@@ -245,6 +245,8 @@ const FIELDS: {
   { key: "stop_loss_pct", label: "Stop loss (%)", hint: "exit in loss at" },
   { key: "trail_after_pct", label: "Trail after (%)", hint: "arm trailing at" },
   { key: "trail_drop_pct", label: "Trail drop (%)", hint: "give-back from peak" },
+  { key: "exit_slippage_bps", label: "Exit slippage (bps)", hint: "100 = 1% haircut" },
+  { key: "max_gain_pct", label: "Max gain cap (%)", hint: "per-trade upside cap" },
 ];
 
 function BotConfigSheet({ bot, onClose }: { bot: BotStatus | null; onClose: () => void }) {

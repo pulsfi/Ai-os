@@ -57,10 +57,12 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             usd_per_trade=usd,
             max_open_positions=3,
             take_profit_pct=40.0,
-            stop_loss_pct=25.0,
+            stop_loss_pct=18.0,  # tighter: cut losers faster (was 25%)
             max_hold_s=15 * 60,
             trail_after_pct=15.0,  # up 15%? protect it:
-            trail_drop_pct=10.0,  # give back 10% from peak -> out
+            trail_drop_pct=8.0,  # give back 8% from peak -> out (let winners run less far back)
+            exit_slippage_bps=150,  # fresh launches are illiquid: 1.5% haircut
+            max_gain_pct=300.0,  # allow bigger honest wins (sniping needs fat tails)
         ),
         BotConfig(
             id="graduate",
@@ -75,6 +77,8 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             max_hold_s=60 * 60,
             trail_after_pct=8.0,
             trail_drop_pct=5.0,
+            exit_slippage_bps=100,  # graduating coins: ~1% haircut
+            max_gain_pct=150.0,
         ),
         BotConfig(
             id="trend",
@@ -87,8 +91,13 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             take_profit_pct=3.0,
             stop_loss_pct=2.0,
             max_hold_s=6 * 60 * 60,
-            trail_after_pct=1.5,
+            trail_after_pct=2.0,
             trail_drop_pct=1.0,
+            # Watchlist tokens (SOL/JUP/BONK/WIF) are deeply liquid — real
+            # slippage on a $50 order is tiny. The old 2% flat haircut is
+            # what turned this bot's 3% wins into losses.
+            exit_slippage_bps=25,  # 0.25%
+            max_gain_pct=100000.0,  # no cap needed on liquid real prices
         ),
     ]
 
@@ -120,12 +129,9 @@ class BotManager:
             # Apply any saved user tuning on top of the defaults.
             if self._overrides.get(config.id):
                 config = config.model_copy(update=self._overrides[config.id])
+            # slippage/cap now live on each BotConfig (per-bot, tunable).
             self._runners[config.id] = BotRunner(
-                config,
-                strategies[config.strategy],
-                self._ledger,
-                exit_slippage_bps=settings.bots_exit_slippage_bps,
-                max_gain_pct=settings.bots_max_gain_pct,
+                config, strategies[config.strategy], self._ledger
             )
         logger.info("Bot fleet built: %s (PAPER MODE)", ", ".join(self._runners))
 
