@@ -192,6 +192,7 @@ export const botsService = {
       interval_s: number;
       exit_slippage_bps: number;
       max_gain_pct: number;
+      reentry_cooldown_s: number;
     }>,
   ): Promise<BotStatus> =>
     patchValidated(`/bots/${encodeURIComponent(botId)}/config`, update, botStatusSchema),

@@ -39,6 +39,9 @@ class BotConfig(BaseModel):
     # haircut that's fine for a sniper destroys a 3%-margin scalper.
     exit_slippage_bps: int = Field(default=100, ge=0, le=1000)
     max_gain_pct: float = Field(default=100.0, gt=0)
+    # Seconds to block re-buying a coin after exiting it (anti-churn: you
+    # buy a launch once, not repeatedly on every tick).
+    reentry_cooldown_s: float = Field(default=600.0, ge=0)
 
 
 class BotConfigUpdate(BaseModel):
@@ -56,6 +59,7 @@ class BotConfigUpdate(BaseModel):
     interval_s: float | None = Field(default=None, ge=2, le=3600)
     exit_slippage_bps: int | None = Field(default=None, ge=0, le=1000)
     max_gain_pct: float | None = Field(default=None, gt=0, le=100000)
+    reentry_cooldown_s: float | None = Field(default=None, ge=0, le=86400)
 
 
 class BotStatus(BaseModel):

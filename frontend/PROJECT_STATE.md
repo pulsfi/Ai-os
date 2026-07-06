@@ -548,9 +548,23 @@ mattering to the Sniper. Also the Sniper was genuinely negative
 - Wiped the 97 broken-pricing trades for a clean record.
 - Tests: 153/153.
 
+### Honesty fix 2 (2026-07-06) — cooldown + realistic sniper cap
+
+The "96.7% win / +$1839" reading was fake: the sniper re-bought the SAME
+coin (BONK 2.0) ~30×, banking a capped +300% each time.
+
+- **Per-token re-entry cooldown** (`BotConfig.reentry_cooldown_s`, tunable):
+  after exiting a coin the bot can't re-buy it for the cooldown window —
+  sniper 15m, graduate 30m, trend 2m. Kills the same-coin churn.
+- **Realistic sniper pricing**: cap 300%→60%, slippage 150→300 bps. You
+  can't dump a fresh illiquid launch at +300%; the model now reflects that.
+- Wiped the 63 fake trades. Record rebuilds honestly (and trades far less
+  often now — strict entries + cooldown, as it should).
+- Tests: 154/154 (new: cooldown blocks re-buying the same mint).
+
 ### Remaining Stage 7
 
 - **#3 Bot signing path** — DELIBERATELY gated: needs a backend key + a
-  PROVEN record. The paper record is still forming; nothing proves an
-  edge yet. Not built.
-- **#6 retune** — continue from the honest record as clean days accrue.
+  PROVEN record. Nothing proves an edge yet; the honest record is just
+  starting. Not built.
+- **#6 retune** — from the honest record as clean days accrue.

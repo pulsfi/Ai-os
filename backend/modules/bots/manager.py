@@ -61,8 +61,12 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             max_hold_s=15 * 60,
             trail_after_pct=15.0,  # up 15%? protect it:
             trail_drop_pct=8.0,  # give back 8% from peak -> out (let winners run less far back)
-            exit_slippage_bps=150,  # fresh launches are illiquid: 1.5% haircut
-            max_gain_pct=300.0,  # allow bigger honest wins (sniping needs fat tails)
+            # Fresh launches are thin: a real exit is much worse than the
+            # marked mcap. 3% haircut + a modest cap keeps paper honest —
+            # you can't actually dump a new launch at +300%.
+            exit_slippage_bps=300,
+            max_gain_pct=60.0,
+            reentry_cooldown_s=900.0,  # don't re-snipe the same launch for 15m
         ),
         BotConfig(
             id="graduate",
@@ -77,8 +81,9 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             max_hold_s=60 * 60,
             trail_after_pct=8.0,
             trail_drop_pct=5.0,
-            exit_slippage_bps=100,  # graduating coins: ~1% haircut
-            max_gain_pct=150.0,
+            exit_slippage_bps=150,  # graduating coins: ~1.5% haircut
+            max_gain_pct=100.0,
+            reentry_cooldown_s=1800.0,  # a coin graduates once; 30m cooldown
         ),
         BotConfig(
             id="trend",
@@ -98,6 +103,7 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             # what turned this bot's 3% wins into losses.
             exit_slippage_bps=25,  # 0.25%
             max_gain_pct=100000.0,  # no cap needed on liquid real prices
+            reentry_cooldown_s=120.0,  # scalper can re-trade a liquid token sooner
         ),
     ]
 

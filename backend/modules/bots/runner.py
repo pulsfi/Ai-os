@@ -10,6 +10,7 @@ PAPER MODE ONLY — "open/close" means ledger rows with virtual USD.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from models.schemas.bots import BotConfig, BotState, BotStatus
@@ -48,6 +49,9 @@ class BotRunner:
         self._last_price: dict[int, float] = {}
         # trade_id -> peak price since entry (drives the trailing stop).
         self._peak_price: dict[int, float] = {}
+        # mint -> monotonic time until which re-entry is blocked (stops the
+        # bot from re-buying the same coin over and over after each exit).
+        self._cooldown: dict[str, float] = {}
         # Serializes scheduled ticks with event-driven request_tick calls.
         self._tick_lock = asyncio.Lock()
 
@@ -198,6 +202,8 @@ class BotRunner:
         )
         self._last_price.pop(trade_id, None)
         self._peak_price.pop(trade_id, None)
+        # Block re-buying this same coin until the cooldown expires.
+        self._cooldown[mint] = time.monotonic() + self.config.reentry_cooldown_s
         # Let the strategy release live-stream resources for this mint.
         asyncio.create_task(self._strategy.on_position_closed(mint))
         logger.info("bot %s closed trade %s: %s %+.1f%%", self.config.id, trade_id, note, realized_pct)
@@ -207,8 +213,11 @@ class BotRunner:
         slots = self.config.max_open_positions - len(open_trades)
         if slots <= 0:
             return
-        held = {t.mint for t in open_trades}
-        for signal in await self._strategy.find_entries(held, slots):
+        # Exclude both currently-held mints and mints still in cooldown.
+        now = time.monotonic()
+        self._cooldown = {m: exp for m, exp in self._cooldown.items() if exp > now}
+        blocked = {t.mint for t in open_trades} | set(self._cooldown)
+        for signal in await self._strategy.find_entries(blocked, slots):
             trade_id = self._ledger.open_trade(
                 bot_id=self.config.id,
                 mint=signal.mint,

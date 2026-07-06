@@ -300,6 +300,7 @@ export const botConfigSchema = z.object({
   trail_drop_pct: z.number().nullable(),
   exit_slippage_bps: z.number(),
   max_gain_pct: z.number(),
+  reentry_cooldown_s: z.number(),
 });
 
 export const botStatusSchema = z.object({

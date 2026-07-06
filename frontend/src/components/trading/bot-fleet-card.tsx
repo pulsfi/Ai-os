@@ -247,6 +247,7 @@ const FIELDS: {
   { key: "trail_drop_pct", label: "Trail drop (%)", hint: "give-back from peak" },
   { key: "exit_slippage_bps", label: "Exit slippage (bps)", hint: "100 = 1% haircut" },
   { key: "max_gain_pct", label: "Max gain cap (%)", hint: "per-trade upside cap" },
+  { key: "reentry_cooldown_s", label: "Re-entry cooldown (s)", hint: "block re-buying a coin" },
 ];
 
 function BotConfigSheet({ bot, onClose }: { bot: BotStatus | null; onClose: () => void }) {

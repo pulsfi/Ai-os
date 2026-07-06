@@ -61,6 +61,38 @@ def trailing_runner(tmp_path: Path, path: list[float]) -> BotRunner:
     )
 
 
+async def test_reentry_cooldown_blocks_rebuying_same_mint(tmp_path: Path) -> None:
+    """After exiting a coin, the bot must not immediately re-buy it."""
+
+    class AlwaysWantsMintX(Strategy):
+        name = "always"
+
+        def __init__(self) -> None:  # no clients needed
+            pass
+
+        async def find_entries(self, held_mints: set[str], slots: int):
+            # Only offers MintX; respects the blocked set the runner passes.
+            if "MintX" in held_mints or slots < 1:
+                return []
+            return [EntrySignal("MintX", "XXX", 1.0, "t")]
+
+        async def current_price(self, mint: str):
+            return 0.5  # instant stop-loss so it closes each tick
+
+    config = BotConfig(
+        id="cool", name="Cool", strategy="always", description="t",
+        interval_s=0.05, usd_per_trade=10, max_open_positions=1,
+        take_profit_pct=10, stop_loss_pct=10, max_hold_s=3600,
+        exit_slippage_bps=0, max_gain_pct=1_000_000, reentry_cooldown_s=999,
+    )
+    runner = BotRunner(config, AlwaysWantsMintX(), BotLedger(tmp_path / "b.db"))
+    await runner.tick()  # opens MintX
+    await runner.tick()  # stop-loss closes it -> cooldown set on MintX
+    await runner.tick()  # wants MintX again, but it's cooling -> no re-entry
+    trades = runner._ledger.trades("cool", 50)
+    assert len(trades) == 1  # exactly one trade, not a re-buy spree
+
+
 async def test_honest_pricing_caps_moonshot_and_haircuts(tmp_path: Path) -> None:
     """A +400% mark can't be dumped at the mark: gain is capped + haircut."""
     config = BotConfig(
