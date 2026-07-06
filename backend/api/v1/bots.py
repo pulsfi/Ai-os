@@ -8,6 +8,7 @@ Everything stays paper-mode — the module holds no keys and signs nothing.
 from typing import Literal
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from core.dependencies import BotManagerDep
 from models.schemas.bots import (
@@ -18,6 +19,25 @@ from models.schemas.bots import (
 )
 
 router = APIRouter()
+
+
+class ResetResult(BaseModel):
+    """Outcome of wiping the paper track record."""
+
+    wiped: int
+    detail: str
+
+
+@router.post("/reset", response_model=ResetResult)
+async def reset_ledger(bots: BotManagerDep) -> ResetResult:
+    """Wipe the paper trade record for a clean start (e.g. after a pricing
+    model change). Paper data only — no real funds are involved."""
+    n = bots.reset_ledger()
+    return ResetResult(
+        wiped=n,
+        detail=f"Wiped {n} paper trades. The track record now restarts under "
+        "the current (honest) pricing model.",
+    )
 
 
 @router.get("", response_model=list[BotStatus])

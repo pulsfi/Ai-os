@@ -22,10 +22,19 @@ logger = logging.getLogger(__name__)
 class BotRunner:
     """Owns one bot's loop, state, and position bookkeeping."""
 
-    def __init__(self, config: BotConfig, strategy: Strategy, ledger: BotLedger) -> None:
+    def __init__(
+        self,
+        config: BotConfig,
+        strategy: Strategy,
+        ledger: BotLedger,
+        exit_slippage_bps: int = 200,
+        max_gain_pct: float = 100.0,
+    ) -> None:
         self.config = config
         self._strategy = strategy
         self._ledger = ledger
+        self._exit_slippage_bps = exit_slippage_bps
+        self._max_gain_pct = max_gain_pct
         self._task: asyncio.Task[None] | None = None
         self._state = BotState.STOPPED
         self._started_at: str | None = None
@@ -88,6 +97,11 @@ class BotRunner:
             await self._manage_open_positions()
             await self._open_new_positions()
 
+    def reset_marks(self) -> None:
+        """Drop in-memory price marks (used after a ledger reset)."""
+        self._last_price.clear()
+        self._peak_price.clear()
+
     def request_tick(self) -> None:
         """Event-driven tick: evaluate NOW instead of waiting the interval.
 
@@ -123,7 +137,7 @@ class BotRunner:
                 change_pct = (price - trade.entry_price) / trade.entry_price * 100
                 peak_gain_pct = (peak - trade.entry_price) / trade.entry_price * 100
                 if change_pct >= self.config.take_profit_pct:
-                    self._close(trade.id, trade.mint, price, f"take-profit +{change_pct:.1f}%")
+                    self._close(trade.id, trade.mint, trade.entry_price, price, "take-profit")
                     continue
                 # Trailing stop: armed once the peak gain clears the
                 # threshold; fires when price gives back too much of it.
@@ -134,14 +148,12 @@ class BotRunner:
                     and price <= peak * (1 - self.config.trail_drop_pct / 100)
                 ):
                     self._close(
-                        trade.id,
-                        trade.mint,
-                        price,
-                        f"trailing-stop +{change_pct:.1f}% (peak +{peak_gain_pct:.1f}%)",
+                        trade.id, trade.mint, trade.entry_price, price,
+                        f"trailing-stop (peak +{peak_gain_pct:.1f}%)",
                     )
                     continue
                 if change_pct <= -self.config.stop_loss_pct:
-                    self._close(trade.id, trade.mint, price, f"stop-loss {change_pct:.1f}%")
+                    self._close(trade.id, trade.mint, trade.entry_price, price, "stop-loss")
                     continue
             if held_s >= self.config.max_hold_s:
                 # Close at the last real price we saw; entry price if the
@@ -150,15 +162,33 @@ class BotRunner:
                 note = f"max-hold {int(held_s)}s"
                 if trade.id not in self._last_price:
                     note += " (no live price seen; closed flat)"
-                self._close(trade.id, trade.mint, exit_price, note)
+                self._close(trade.id, trade.mint, trade.entry_price, exit_price, note)
 
-    def _close(self, trade_id: int, mint: str, price: float, note: str) -> None:
-        self._ledger.close_trade(trade_id, price, note)
+    def _realistic_exit(self, entry_price: float, mark: float) -> tuple[float, str]:
+        """Model a realizable fill: a slippage haircut on every exit, and a
+        per-trade gain cap (you can't dump a fresh illiquid launch at an
+        overshot mark). Returns (exit_price, note_suffix)."""
+        exit_price = mark * (1 - self._exit_slippage_bps / 10_000)
+        suffix = ""
+        cap_price = entry_price * (1 + self._max_gain_pct / 100)
+        if exit_price > cap_price:
+            exit_price = cap_price
+            suffix = f" · capped +{self._max_gain_pct:.0f}%"
+        return exit_price, suffix
+
+    def _close(
+        self, trade_id: int, mint: str, entry_price: float, mark: float, note: str
+    ) -> None:
+        exit_price, suffix = self._realistic_exit(entry_price, mark)
+        realized_pct = (exit_price - entry_price) / entry_price * 100 if entry_price else 0.0
+        self._ledger.close_trade(
+            trade_id, exit_price, f"{note} {realized_pct:+.1f}%{suffix}"
+        )
         self._last_price.pop(trade_id, None)
         self._peak_price.pop(trade_id, None)
         # Let the strategy release live-stream resources for this mint.
         asyncio.create_task(self._strategy.on_position_closed(mint))
-        logger.info("bot %s closed trade %s: %s", self.config.id, trade_id, note)
+        logger.info("bot %s closed trade %s: %s %+.1f%%", self.config.id, trade_id, note, realized_pct)
 
     async def _open_new_positions(self) -> None:
         open_trades = self._ledger.open_trades(self.config.id)

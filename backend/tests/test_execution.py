@@ -148,11 +148,28 @@ def test_readiness_all_green(settings: Settings) -> None:
         losses=24,
         win_rate_pct=60.0,
         realized_pnl_usd=40.0,
+        avg_pnl_pct=8.0,  # plausible
     )
     old = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
     card = evaluate_readiness(fleet, old, settings)
     assert card.ready is True
     assert all(c.passed for c in card.criteria)
+
+
+def test_readiness_sanity_gate_blocks_implausible_returns(settings: Settings) -> None:
+    """Even with everything else green, an implausible avg trade fails."""
+    from datetime import datetime, timedelta, timezone
+
+    fleet = BotPerformance(
+        bot_id="fleet", name="Fleet", closed_trades=200, wins=180, losses=20,
+        win_rate_pct=90.0, realized_pnl_usd=19000.0,
+        avg_pnl_pct=236.0,  # absurd — inflated paper fills
+    )
+    old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    card = evaluate_readiness(fleet, old, settings)
+    assert card.ready is False
+    plausibility = next(c for c in card.criteria if c.name == "Return plausibility")
+    assert plausibility.passed is False
 
 
 # --- endpoints ------------------------------------------------------------------
@@ -224,7 +241,7 @@ def test_mode_switch_to_live_allowed_when_ready(settings: Settings) -> None:
         def performance(self):
             old_fleet = BotPerformance(
                 bot_id="fleet", name="Fleet", closed_trades=60, wins=36, losses=24,
-                win_rate_pct=60.0, realized_pnl_usd=40.0,
+                win_rate_pct=60.0, realized_pnl_usd=40.0, avg_pnl_pct=8.0,
             )
             return [old_fleet]
 

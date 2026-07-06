@@ -37,10 +37,12 @@ import {
   type ChatStatus,
   type HealthReport,
   type HistoryPoint,
+  resetResultSchema,
   type BotControlResult,
   type BotPerformance,
   type BotStatus,
   type BotTrade,
+  type ResetResult,
   type MarketStatus,
   type PaperSummary,
   type PaperTrade,
@@ -166,6 +168,10 @@ export const botsService = {
       undefined,
       botControlResultSchema,
     ),
+
+  /** POST /bots/reset — wipe the paper track record (paper data only). */
+  reset: (): Promise<ResetResult> =>
+    postValidated("/bots/reset", undefined, resetResultSchema),
 };
 
 export const executionService = {

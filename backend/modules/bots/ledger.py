@@ -141,6 +141,14 @@ class BotLedger:
             rows = conn.execute(query, params).fetchall()
         return [BotTrade(**dict(r)) for r in rows]
 
+    def reset(self) -> int:
+        """Delete all trades — starts a fresh track record. Returns count wiped."""
+        with self._connect() as conn:
+            n = conn.execute("SELECT COUNT(*) AS c FROM bot_trades").fetchone()["c"]
+            conn.execute("DELETE FROM bot_trades")
+        logger.warning("bot ledger reset — %d trades wiped", n)
+        return int(n)
+
     def first_entry_ts(self) -> str | None:
         """Earliest trade entry timestamp across the whole fleet (ISO)."""
         with self._connect() as conn:

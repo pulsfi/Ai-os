@@ -481,8 +481,36 @@ each agent queries live data / live system state and emits a real result.
 > execution stays deliberately gated: bots are paper-only (no key), and
 > real trades require a human Phantom approval.
 
-## ⏭️ Next (polish / optional)
+## 🚧 Stage 7 — Live-trading hardening (in progress, 2026-07-06)
 
-- Post-trade fill reconciliation into the ledger; a wallet-exposure guard.
-- Speed up the test suite (agent-runtime tests build real singletons).
-- Let the fleet mature the track record toward the go-live scorecard.
+### Done this pass
+
+- **Paper/Live switch** (`POST /execution/mode/{paper|live}`) — a
+  segmented toggle in the execution panel. Paper always allowed; **Live
+  is refused (409) unless the readiness scorecard is fully green** — the
+  gate is now enforced in code. Surfaced the live-trading controls to the
+  top of the Trading page + a PAPER/LIVE pill in the ticker.
+- **#1 Honest paper pricing** — every simulated exit takes a slippage
+  haircut (`BOTS_EXIT_SLIPPAGE_BPS`, 2%) and per-trade gains are capped
+  (`BOTS_MAX_GAIN_PCT`, +100%), killing the mcap/1B moonshot artifacts.
+- **#2 Return-plausibility gate** — the scorecard fails when the avg
+  paper trade exceeds `GOLIVE_MAX_AVG_TRADE_PCT` (30%), so inflated
+  returns can never green-light live.
+- **#4 Wallet exposure guard** — `MANUAL_DAILY_BUY_LIMIT_USD` ($500)
+  caps total real USD bought per UTC day, on top of the per-trade cap.
+- **Reset record** — `POST /bots/reset` + a confirm-guarded button on the
+  Performance card, so the track record can start clean under the new
+  pricing (wiped the 197 old inflated trades; scorecard is honest now).
+- Tests: 139/139. Verified live: live blocked at the plausibility +
+  track-length gates; reset produced a clean 0-trade scorecard.
+
+### Remaining Stage 7
+
+- **#3 Bot signing path** — the real autonomous-live work: wallet from a
+  secure store, tx build/sign/send with priority fees, confirmation +
+  reconciliation, tiny-size ramp. This is what the Live switch ultimately
+  unlocks; deliberately still unbuilt.
+- **#5 Fill reconciliation** — read real Phantom-trade results on-chain
+  back into a ledger.
+- **#6 Strategy tuning round 2** — retune from the honest record.
+- **#7 Alerts** — Telegram/desktop pings on big moves / errors / kill.

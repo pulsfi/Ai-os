@@ -229,6 +229,19 @@ export function useBotTrades(botId: string | null, limit = 50) {
   });
 }
 
+/** Wipe the paper track record — refreshes every bot view. */
+export function useResetLedger() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: botsService.reset,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.bots });
+      void queryClient.invalidateQueries({ queryKey: qk.botPerformance });
+      void queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
 /** Track record: equity curves + per-strategy comparison. */
 export function useBotPerformance() {
   return useQuery({

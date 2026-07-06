@@ -9,9 +9,11 @@
  * library would be pure weight.
  */
 import * as React from "react";
-import { TrendingUp } from "lucide-react";
+import { RotateCcw, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,10 +23,39 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
-import { useBotPerformance } from "@/hooks/use-backend";
+import { useBotPerformance, useResetLedger } from "@/hooks/use-backend";
 import { formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { BotPerformance } from "@/lib/api/schemas";
+
+function ResetButton() {
+  const reset = useResetLedger();
+  function confirmReset() {
+    toast.warning("Wipe the paper track record?", {
+      description: "Paper data only — starts a clean record under honest pricing.",
+      action: {
+        label: "Reset",
+        onClick: () =>
+          reset.mutate(undefined, {
+            onSuccess: (r) => toast.success(r.detail),
+            onError: () => toast.error("Reset failed"),
+          }),
+      },
+      duration: 8000,
+    });
+  }
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="h-8"
+      disabled={reset.isPending}
+      onClick={confirmReset}
+    >
+      <RotateCcw className="size-3.5" /> Reset record
+    </Button>
+  );
+}
 
 const W = 720;
 const H = 160;
@@ -95,13 +126,18 @@ export function PerformanceCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <TrendingUp className="size-4 text-primary" /> Performance review
-        </CardTitle>
-        <CardDescription>
-          Realized-PnL equity curve and per-strategy track record — the evidence
-          the live-execution gate will be judged on
-        </CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TrendingUp className="size-4 text-primary" /> Performance review
+            </CardTitle>
+            <CardDescription>
+              Realized-PnL equity curve and per-strategy track record — the evidence
+              the live-execution gate will be judged on
+            </CardDescription>
+          </div>
+          <ResetButton />
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {perf.isLoading && <Skeleton className="h-64 rounded-lg" />}

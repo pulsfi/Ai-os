@@ -121,6 +121,18 @@ async def test_build_buy_cap_blocks_fat_finger() -> None:
         await builder(make_risk(), settings=settings).build_buy(USER, MINT, 51.0)
 
 
+async def test_build_buy_daily_limit_blocks() -> None:
+    """The daily exposure guard stops further buys once the cap is hit."""
+    settings = Settings(
+        _env_file=None, manual_trade_max_usd=100.0, manual_daily_buy_limit_usd=15.0
+    )
+    b = builder(make_risk(), settings=settings)
+    await b.build_buy(USER, MINT, 10.0)  # ok, $10 of $15 used
+    with pytest.raises(ManualTradeBlocked, match="daily buy limit"):
+        await b.build_buy(USER, MINT, 10.0)  # would exceed $15
+    assert b.bought_today == pytest.approx(10.0)
+
+
 async def test_build_buy_no_route_errors() -> None:
     from core.exceptions import ExternalServiceError
 

@@ -113,7 +113,11 @@ class BotManager:
         self._runners: dict[str, BotRunner] = {}
         for config in _default_configs(settings):
             self._runners[config.id] = BotRunner(
-                config, strategies[config.strategy], self._ledger
+                config,
+                strategies[config.strategy],
+                self._ledger,
+                exit_slippage_bps=settings.bots_exit_slippage_bps,
+                max_gain_pct=settings.bots_max_gain_pct,
             )
         logger.info("Bot fleet built: %s (PAPER MODE)", ", ".join(self._runners))
 
@@ -172,6 +176,13 @@ class BotManager:
     def first_entry_ts(self) -> str | None:
         """Earliest trade time across the fleet (drives days-of-record)."""
         return self._ledger.first_entry_ts()
+
+    def reset_ledger(self) -> int:
+        """Wipe the paper track record and per-bot marks (fresh start)."""
+        n = self._ledger.reset()
+        for runner in self._runners.values():
+            runner.reset_marks()
+        return n
 
     def performance(self) -> list[BotPerformance]:
         """Track record per bot, plus the whole fleet as id 'fleet'.

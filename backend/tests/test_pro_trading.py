@@ -53,7 +53,52 @@ def trailing_runner(tmp_path: Path, path: list[float]) -> BotRunner:
         trail_after_pct=10.0,
         trail_drop_pct=5.0,
     )
-    return BotRunner(config, PricePath(path), BotLedger(tmp_path / "bots.db"))
+    # Neutralize honest-pricing haircut/cap here — these tests check the
+    # exit-trigger logic, not the fill model (that has its own tests).
+    return BotRunner(
+        config, PricePath(path), BotLedger(tmp_path / "bots.db"),
+        exit_slippage_bps=0, max_gain_pct=1_000_000.0,
+    )
+
+
+async def test_honest_pricing_caps_moonshot_and_haircuts(tmp_path: Path) -> None:
+    """A +400% mark can't be dumped at the mark: gain is capped + haircut."""
+    config = BotConfig(
+        id="honest", name="Honest", strategy="pricepath", description="t",
+        interval_s=0.05, usd_per_trade=100.0, max_open_positions=1,
+        take_profit_pct=50.0, stop_loss_pct=90.0, max_hold_s=3600.0,
+    )
+    # entry 1.0 -> mark 5.0 (+400%). Cap 100%, 2% slippage.
+    runner = BotRunner(
+        config, PricePath([5.0]), BotLedger(tmp_path / "b.db"),
+        exit_slippage_bps=200, max_gain_pct=100.0,
+    )
+    await runner.tick()  # opens @ 1.0
+    await runner.tick()  # +400% mark -> take-profit, but capped
+    status = runner.status()
+    assert status.closed_trades == 1
+    # Capped at +100% then 2% haircut is applied before the cap check, so the
+    # credited gain is the +100% cap, not +400%. On $100 that's ~+$100, far
+    # below the naive +$400.
+    assert status.realized_pnl_usd == pytest.approx(100.0, abs=0.5)
+    trade = runner._ledger.trades("honest", 1)[0]
+    assert "capped" in (trade.exit_note or "")
+
+
+async def test_honest_pricing_haircut_on_normal_exit(tmp_path: Path) -> None:
+    """A modest win takes a slippage haircut (realistic, slightly less)."""
+    config = BotConfig(
+        id="hc", name="HC", strategy="pricepath", description="t",
+        interval_s=0.05, usd_per_trade=100.0, max_open_positions=1,
+        take_profit_pct=10.0, stop_loss_pct=90.0, max_hold_s=3600.0,
+    )
+    runner = BotRunner(
+        config, PricePath([1.20]), BotLedger(tmp_path / "b.db"),
+        exit_slippage_bps=200, max_gain_pct=100.0,
+    )
+    await runner.tick()
+    await runner.tick()  # +20% mark -> exit 1.20*0.98=1.176 -> +17.6%
+    assert runner.status().realized_pnl_usd == pytest.approx(17.6, abs=0.1)
 
 
 async def test_trailing_stop_locks_in_profit(tmp_path: Path) -> None:

@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     pumpportal_enabled: bool = True
     bots_usd_per_trade: float = 50.0  # virtual position size
     bots_db_path: str = "data/paper_bots.db"  # bot ledger, relative to backend/
+    # Honest paper pricing: model that exits aren't free and can't be dumped
+    # at an overshot mark on illiquid meme coins. Every close takes a
+    # slippage haircut, and per-trade gains are capped to a realizable level.
+    bots_exit_slippage_bps: int = 200  # 2% haircut on every simulated exit
+    bots_max_gain_pct: float = 100.0  # cap credited gain per trade (anti-moonshot)
 
     # --- daily fleet report (auto vault write; same constrained path) ---
     daily_report_enabled: bool = False  # true = write the diary automatically
@@ -102,11 +107,16 @@ class Settings(BaseSettings):
     # Manual (Phantom-signed) trades: the user approves each one, so this is
     # just a fat-finger guard on buy size. Raise it if you want bigger trades.
     manual_trade_max_usd: float = 100.0
+    # Exposure guard: cap total real USD bought via the wallet per UTC day.
+    manual_daily_buy_limit_usd: float = 500.0
     # Go-live readiness gates (all must pass before live is justifiable).
     golive_min_closed_trades: int = 50
     golive_min_win_rate_pct: float = 55.0
     golive_min_realized_pnl_usd: float = 25.0
     golive_min_days: float = 7.0
+    # Sanity gate: an average paper trade above this is implausible for real
+    # fills and signals the record can't be trusted (blocks a premature go-live).
+    golive_max_avg_trade_pct: float = 30.0
 
     # --- market intelligence (READ-ONLY market data) ---
     birdeye_api_key: str = ""  # optional 5th provider; empty = skipped

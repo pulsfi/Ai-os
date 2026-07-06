@@ -365,6 +365,13 @@ export const botPerformanceSchema = z.object({
 export type BotPerformance = z.infer<typeof botPerformanceSchema>;
 export type EquityPoint = z.infer<typeof equityPointSchema>;
 
+export const resetResultSchema = z.object({
+  wiped: z.number(),
+  detail: z.string(),
+});
+
+export type ResetResult = z.infer<typeof resetResultSchema>;
+
 /** One frame pushed by ws://…/api/v1/ws every few seconds. */
 export const fleetSnapshotSchema = z.object({
   type: z.literal("fleet"),

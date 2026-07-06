@@ -35,6 +35,7 @@ def evaluate_readiness(
     win_rate = fleet.win_rate_pct if fleet and fleet.win_rate_pct is not None else 0.0
     pnl = fleet.realized_pnl_usd if fleet else 0.0
     days = _days_since(first_entry_ts)
+    avg_trade = fleet.avg_pnl_pct if fleet and fleet.avg_pnl_pct is not None else None
 
     criteria = [
         ReadinessCriterion(
@@ -60,6 +61,13 @@ def evaluate_readiness(
             target=f">= {settings.golive_min_days} days of record",
             actual=f"{days:.1f} days",
             passed=days >= settings.golive_min_days,
+        ),
+        ReadinessCriterion(
+            name="Return plausibility",
+            target=f"avg trade <= {settings.golive_max_avg_trade_pct}%",
+            actual=f"{avg_trade:.1f}%" if avg_trade is not None else "—",
+            # Implausibly high avg = unrealistic paper fills; not trustworthy.
+            passed=avg_trade is not None and avg_trade <= settings.golive_max_avg_trade_pct,
         ),
     ]
     ready = all(c.passed for c in criteria)

@@ -48,6 +48,15 @@ def test_ledger_open_close_and_stats(tmp_path: Path) -> None:
     assert trades[0].pnl_pct is not None
 
 
+def test_ledger_reset_wipes_all(tmp_path: Path) -> None:
+    ledger = make_ledger(tmp_path)
+    ledger.open_trade("sniper", "A", "AAA", 50.0, 1.0)
+    ledger.open_trade("trend", "B", "BBB", 50.0, 1.0)
+    assert ledger.reset() == 2
+    assert ledger.trades(None, 10) == []
+    assert ledger.first_entry_ts() is None
+
+
 def test_ledger_isolates_bots(tmp_path: Path) -> None:
     ledger = make_ledger(tmp_path)
     ledger.open_trade("sniper", "MintA", "AAA", 50.0, 1.0)
@@ -171,7 +180,14 @@ def make_runner(tmp_path: Path, **overrides: object) -> tuple[BotRunner, Scripte
         **overrides,  # type: ignore[arg-type]
     )
     strategy = ScriptedStrategy()
-    return BotRunner(config, strategy, make_ledger(tmp_path)), strategy
+    # No haircut/cap here — these tests assert exact PnL from the exit logic.
+    return (
+        BotRunner(
+            config, strategy, make_ledger(tmp_path),
+            exit_slippage_bps=0, max_gain_pct=1_000_000.0,
+        ),
+        strategy,
+    )
 
 
 async def test_runner_opens_then_takes_profit(tmp_path: Path) -> None:

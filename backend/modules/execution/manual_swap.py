@@ -15,6 +15,7 @@ which is precisely why they stay paper until the go-live gate opens.
 
 import base64
 import logging
+from datetime import datetime, timezone
 
 import httpx
 
@@ -56,6 +57,20 @@ class ManualSwapBuilder:
         self._market = market
         self._settings = settings
         self._http = http or httpx.AsyncClient(timeout=20.0)
+        # Daily real-buy exposure tracking (UTC day).
+        self._day = ""
+        self._bought_today = 0.0
+
+    def _roll_day(self) -> None:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if today != self._day:
+            self._day = today
+            self._bought_today = 0.0
+
+    @property
+    def bought_today(self) -> float:
+        self._roll_day()
+        return round(self._bought_today, 2)
 
     async def _sol_price_usd(self) -> float:
         for t in await self._market.get_watchlist():
@@ -109,12 +124,20 @@ class ManualSwapBuilder:
                 f"trade ${usd_size:.2f} exceeds the ${cap:.0f} manual cap "
                 "(raise MANUAL_TRADE_MAX_USD in backend/.env to change)"
             )
+        self._roll_day()
+        daily_cap = self._settings.manual_daily_buy_limit_usd
+        if self._bought_today + usd_size > daily_cap:
+            raise ManualTradeBlocked(
+                f"daily buy limit reached: ${self._bought_today:.2f} of ${daily_cap:.0f} "
+                "used today (raise MANUAL_DAILY_BUY_LIMIT_USD to change)"
+            )
         sol_usd = await self._sol_price_usd()
         lamports = int(usd_size / sol_usd * 1_000_000_000)
         if lamports <= 0:
             raise ManualTradeBlocked("trade size rounds to zero SOL")
         quote = await self._jupiter_quote(_SOL_MINT, mint, lamports)
         tx = await self._build(quote, user_pubkey)
+        self._bought_today += usd_size  # count the intended buy toward the daily cap
         impact = _impact_pct(quote)
         return BuiltSwap(
             swap_transaction_b64=tx,

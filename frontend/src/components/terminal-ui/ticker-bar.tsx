@@ -7,7 +7,12 @@
  */
 import { Activity, Radio } from "lucide-react";
 
-import { useBotPerformance, useChainStatus, useMarketTokens } from "@/hooks/use-backend";
+import {
+  useBotPerformance,
+  useChainStatus,
+  useExecutionStatus,
+  useMarketTokens,
+} from "@/hooks/use-backend";
 import { useFleetLive } from "@/hooks/use-fleet-live";
 import { formatInt, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -44,6 +49,7 @@ export function TickerBar() {
   const perf = useBotPerformance();
   const tokens = useMarketTokens();
   const chain = useChainStatus();
+  const exec = useExecutionStatus();
 
   const fleetPerf = perf.data?.find((p) => p.bot_id === "fleet");
   const running = fleet.bots?.filter((b) => b.state === "running").length;
@@ -91,9 +97,16 @@ export function TickerBar() {
         />
         <Cell label="SOL" value={formatPrice(sol?.price_usd)} />
         <Cell label="Slot" value={chain.data?.slot == null ? "—" : formatInt(chain.data.slot)} />
-        <div className="flex shrink-0 items-center gap-1 pl-3 text-[10px] uppercase tracking-widest text-muted-foreground">
-          <Activity className="size-3 text-primary" />
-          paper mode
+        <div
+          className={cn(
+            "ml-1 flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest",
+            exec.data?.armed
+              ? "bg-destructive/15 text-red-400"
+              : "bg-emerald-500/15 text-emerald-400",
+          )}
+        >
+          <Activity className="size-3" />
+          {exec.data?.kill_switch ? "halted" : exec.data?.armed ? "live armed" : "paper mode"}
         </div>
       </div>
     </div>

@@ -38,22 +38,26 @@ export default function TradingPage() {
         <TickerBar />
       </FadeIn>
 
-      <FadeIn delay={0.03}>
+      {/* Live-trading controls first — mode switch + wallet, then the record */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <FadeIn delay={0.02} className="lg:col-span-2">
+          <ExecutionPanel />
+        </FadeIn>
+        <FadeIn delay={0.04} className="lg:col-span-2">
+          <WalletTradePanel />
+        </FadeIn>
+      </div>
+
+      <FadeIn delay={0.06}>
         <ExecutionLog />
       </FadeIn>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <FadeIn delay={0.06} className="lg:col-span-2">
+        <FadeIn delay={0.08} className="lg:col-span-2">
           <BotFleetCard />
         </FadeIn>
-        <FadeIn delay={0.09} className="lg:col-span-2">
-          <PerformanceCard />
-        </FadeIn>
         <FadeIn delay={0.1} className="lg:col-span-2">
-          <WalletTradePanel />
-        </FadeIn>
-        <FadeIn delay={0.11} className="lg:col-span-2">
-          <ExecutionPanel />
+          <PerformanceCard />
         </FadeIn>
         <FadeIn delay={0.12}>
           <PumpFunCard />
