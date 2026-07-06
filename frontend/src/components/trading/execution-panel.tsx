@@ -33,13 +33,30 @@ import {
   useExecutionStatus,
   useGoLiveReadiness,
   useKillSwitch,
+  useSetTradingMode,
 } from "@/hooks/use-backend";
+import { ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 export function ExecutionPanel() {
   const status = useExecutionStatus();
   const readiness = useGoLiveReadiness();
   const kill = useKillSwitch();
+  const setMode = useSetTradingMode();
+
+  function switchMode(mode: "paper" | "live") {
+    setMode.mutate(mode, {
+      onSuccess: (s) =>
+        s.armed
+          ? toast.warning("Switched to LIVE — armed. Bots still need a signing wallet; manual trades stay human-approved.")
+          : toast.success("Switched to PAPER — safe simulation mode."),
+      onError: (err) =>
+        toast.error(
+          err instanceof ApiError ? err.message : "Could not switch mode",
+          { duration: 9000 },
+        ),
+    });
+  }
 
   return (
     <Card>
@@ -77,6 +94,47 @@ export function ExecutionPanel() {
 
         {status.data && (
           <>
+            {/* PAPER ⇄ LIVE switch — live is gated by the scorecard */}
+            <div className="flex items-center gap-3 rounded-lg border p-3">
+              <div
+                className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+                role="group"
+                aria-label="Trading mode"
+              >
+                <button
+                  type="button"
+                  disabled={setMode.isPending}
+                  onClick={() => switchMode("paper")}
+                  className={cn(
+                    "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                    !status.data.armed
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-background/60",
+                  )}
+                >
+                  Paper
+                </button>
+                <button
+                  type="button"
+                  disabled={setMode.isPending}
+                  onClick={() => switchMode("live")}
+                  className={cn(
+                    "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                    status.data.armed
+                      ? "bg-destructive text-white"
+                      : "text-muted-foreground hover:bg-background/60",
+                  )}
+                >
+                  Live
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {status.data.armed
+                  ? "LIVE armed. No autonomous real-money path exists yet — bots stay paper; real trades are wallet-approved."
+                  : "PAPER mode. Switching to Live is locked until the readiness scorecard is green."}
+              </p>
+            </div>
+
             <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
               {status.data.reason}
             </div>

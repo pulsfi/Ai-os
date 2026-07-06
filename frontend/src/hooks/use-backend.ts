@@ -199,6 +199,17 @@ export function useKillSwitch() {
   });
 }
 
+/** Paper⇄Live switch — live is gated server-side by the readiness scorecard. */
+export function useSetTradingMode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: "paper" | "live") => executionService.setMode(mode),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
 /** The bot fleet — live loops, so poll fast (10s). */
 export function useBots() {
   return useQuery({

@@ -11,9 +11,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from config import Settings
+from core.exceptions import AppError
 from models.schemas.execution import RiskLimits
 
 logger = logging.getLogger(__name__)
+
+
+class NotReadyForLive(AppError):
+    """Arming live was refused — the go-live scorecard is not green."""
+
+    status_code = 409
+    code = "not_ready_for_live"
 
 
 @dataclass
@@ -53,6 +61,17 @@ class RiskEngine:
         """Operator halt/resume — only ever HALTS execution, never trades."""
         self._kill_switch = on
         logger.warning("execution kill switch %s", "ENGAGED" if on else "released")
+
+    def set_armed(self, on: bool) -> None:
+        """Flip the master arm state (paper ⇄ live intent).
+
+        Arming does NOT create a real-money path for the bots — there is
+        no signing key anywhere. It flips the execution engine's arm flag,
+        which the gate above checks. Callers must enforce the readiness
+        scorecard before arming live.
+        """
+        self.armed = on
+        logger.warning("execution %s", "ARMED (live intent)" if on else "disarmed (paper)")
 
     def check_order(self, usd_size: float, side: str) -> RiskDecision:
         """The one gate. Returns allow/deny with a plain reason."""

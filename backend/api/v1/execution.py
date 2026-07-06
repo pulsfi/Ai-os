@@ -1,9 +1,12 @@
-"""Execution endpoints (Stage 5) — status, readiness, kill switch, dry-run.
+"""Execution endpoints (Stage 5) — status, readiness, mode switch, dry-run.
 
-There is deliberately NO endpoint that arms live trading or sends a real
-order. Arming is env-only (EXECUTION_ARMED), and even then the executor
-is dry-run. The kill switch can only HALT execution, never start it.
+The PAPER⇄LIVE switch is gated: going live is refused unless the go-live
+readiness scorecard is green. Arming creates no real-money bot path (no
+signing key); real trades stay human-approved via the wallet panel. The
+kill switch can only HALT execution, never start it.
 """
+
+from typing import Literal
 
 from fastapi import APIRouter
 
@@ -27,6 +30,7 @@ from models.schemas.execution import (
     WalletBalance,
 )
 from modules.execution import evaluate_readiness
+from modules.execution.risk_engine import NotReadyForLive
 
 router = APIRouter()
 
@@ -68,6 +72,36 @@ async def set_kill_switch(
     """Engage ('on') or release ('off') the global halt. Safe either way —
     it can only stop execution, never begin it."""
     risk.set_kill_switch(state == "on")
+    return await execution_status(risk, settings)
+
+
+@router.post("/mode/{mode}", response_model=ExecutionStatus)
+async def set_trading_mode(
+    mode: Literal["paper", "live"],
+    risk: RiskEngineDep,
+    bots: BotManagerDep,
+    settings: SettingsDep,
+) -> ExecutionStatus:
+    """Switch PAPER ⇄ LIVE.
+
+    Paper always allowed (disarms). Live is REFUSED (409) unless the
+    go-live readiness scorecard is fully green — the gate is enforced
+    here, not just displayed. Arming live still creates no real-money
+    bot path (there is no signing key); real trades remain human-approved
+    via the wallet panel."""
+    if mode == "paper":
+        risk.set_armed(False)
+        return await execution_status(risk, settings)
+
+    fleet = next((p for p in bots.performance() if p.bot_id == "fleet"), None)
+    card = evaluate_readiness(fleet, bots.first_entry_ts(), settings)
+    if not card.ready:
+        failing = ", ".join(c.name for c in card.criteria if not c.passed)
+        raise NotReadyForLive(
+            f"Cannot go live yet — unmet gate(s): {failing}. {card.summary}",
+            details={"failing": failing},
+        )
+    risk.set_armed(True)
     return await execution_status(risk, settings)
 
 

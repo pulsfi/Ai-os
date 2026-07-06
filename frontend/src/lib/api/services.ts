@@ -181,6 +181,11 @@ export const executionService = {
   setKill: (on: boolean): Promise<ExecutionStatus> =>
     postValidated(`/execution/kill/${on ? "on" : "off"}`, undefined, executionStatusSchema),
 
+  /** POST /execution/mode/{paper|live} — switch mode. Live is gated by the
+   *  readiness scorecard (throws 409 not_ready_for_live until green). */
+  setMode: (mode: "paper" | "live"): Promise<ExecutionStatus> =>
+    postValidated(`/execution/mode/${mode}`, undefined, executionStatusSchema),
+
   /** GET /execution/wallet/{pubkey}/balance — read-only SOL balance. */
   walletBalance: (pubkey: string): Promise<WalletBalance> =>
     getValidated(`/execution/wallet/${encodeURIComponent(pubkey)}/balance`, walletBalanceSchema),

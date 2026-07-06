@@ -201,6 +201,46 @@ def test_readiness_endpoint(exec_client: TestClient) -> None:
     assert res.json()["ready"] is False
 
 
+def test_mode_switch_to_paper_always_allowed(exec_client: TestClient) -> None:
+    res = exec_client.post("/api/v1/execution/mode/paper")
+    assert res.status_code == 200
+    assert res.json()["armed"] is False
+
+
+def test_mode_switch_to_live_blocked_when_not_ready(exec_client: TestClient) -> None:
+    """The scorecard gate is ENFORCED: live is refused (409) until green."""
+    res = exec_client.post("/api/v1/execution/mode/live")
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "not_ready_for_live"
+    # And the engine stayed disarmed.
+    assert exec_client.get("/api/v1/execution/status").json()["armed"] is False
+
+
+def test_mode_switch_to_live_allowed_when_ready(settings: Settings) -> None:
+    """With a green record the switch arms (still no real bot path)."""
+    from datetime import datetime, timedelta, timezone
+
+    class ReadyBots:
+        def performance(self):
+            old_fleet = BotPerformance(
+                bot_id="fleet", name="Fleet", closed_trades=60, wins=36, losses=24,
+                win_rate_pct=60.0, realized_pnl_usd=40.0,
+            )
+            return [old_fleet]
+
+        def first_entry_ts(self):
+            return (datetime.now(timezone.utc) - timedelta(days=9)).isoformat()
+
+    app = create_app(settings)
+    engine = make_engine(armed=False)
+    app.dependency_overrides[get_risk] = lambda: engine
+    app.dependency_overrides[get_bots] = lambda: ReadyBots()
+    with TestClient(app) as client:
+        res = client.post("/api/v1/execution/mode/live")
+        assert res.status_code == 200
+        assert res.json()["armed"] is True
+
+
 def test_dry_run_endpoint_blocked_when_disarmed(exec_client: TestClient) -> None:
     res = exec_client.post(
         "/api/v1/execution/dry-run",
