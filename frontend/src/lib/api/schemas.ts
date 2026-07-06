@@ -296,6 +296,8 @@ export const botConfigSchema = z.object({
   take_profit_pct: z.number(),
   stop_loss_pct: z.number(),
   max_hold_s: z.number(),
+  trail_after_pct: z.number().nullable(),
+  trail_drop_pct: z.number().nullable(),
 });
 
 export const botStatusSchema = z.object({

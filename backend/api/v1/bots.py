@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core.dependencies import BotManagerDep
 from models.schemas.bots import (
+    BotConfigUpdate,
     BotControlResult,
     BotPerformance,
     BotStatus,
@@ -68,6 +69,15 @@ async def bot_trades(
 ) -> list[BotTrade]:
     """One bot's paper trade log, newest first (404 for unknown bots)."""
     return bots.trades(bot_id, limit)
+
+
+@router.patch("/{bot_id}/config", response_model=BotStatus)
+async def update_bot_config(
+    bot_id: str, update: BotConfigUpdate, bots: BotManagerDep
+) -> BotStatus:
+    """Tune a bot's parameters (take-profit, size, …). Paper only; persists
+    across restarts. Returns the bot's fresh status."""
+    return bots.update_config(bot_id, update)
 
 
 @router.post("/{bot_id}/{action}", response_model=BotControlResult)

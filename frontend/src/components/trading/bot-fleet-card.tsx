@@ -15,6 +15,7 @@ import {
   Play,
   RotateCcw,
   ScrollText,
+  SlidersHorizontal,
   Square,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -38,7 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
-import { useBotControl, useBotTrades } from "@/hooks/use-backend";
+import { useBotControl, useBotTrades, useUpdateBotConfig } from "@/hooks/use-backend";
 import { useFleetLive } from "@/hooks/use-fleet-live";
 import { formatPct, formatPrice, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -70,6 +72,7 @@ export function BotFleetCard() {
   const bots = useFleetLive();
   const control = useBotControl();
   const [logsFor, setLogsFor] = React.useState<string | null>(null);
+  const [tuneBot, setTuneBot] = React.useState<BotStatus | null>(null);
 
   function act(botId: string, action: "start" | "stop" | "restart") {
     control.mutate(
@@ -203,6 +206,15 @@ export function BotFleetCard() {
                   </Button>
                   <Button
                     size="sm"
+                    variant="outline"
+                    className="h-8"
+                    title="Tune parameters"
+                    onClick={() => setTuneBot(bot)}
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="ghost"
                     className="ml-auto h-8"
                     onClick={() => setLogsFor(bot.config.id)}
@@ -217,7 +229,94 @@ export function BotFleetCard() {
       </CardContent>
 
       <BotTradesSheet botId={logsFor} onClose={() => setLogsFor(null)} />
+      <BotConfigSheet bot={tuneBot} onClose={() => setTuneBot(null)} />
     </Card>
+  );
+}
+
+const FIELDS: {
+  key: keyof BotStatus["config"];
+  label: string;
+  hint: string;
+}[] = [
+  { key: "usd_per_trade", label: "Position size ($)", hint: "virtual USD per trade" },
+  { key: "max_open_positions", label: "Max positions", hint: "concurrent holds" },
+  { key: "take_profit_pct", label: "Take profit (%)", hint: "exit in profit at" },
+  { key: "stop_loss_pct", label: "Stop loss (%)", hint: "exit in loss at" },
+  { key: "trail_after_pct", label: "Trail after (%)", hint: "arm trailing at" },
+  { key: "trail_drop_pct", label: "Trail drop (%)", hint: "give-back from peak" },
+];
+
+function BotConfigSheet({ bot, onClose }: { bot: BotStatus | null; onClose: () => void }) {
+  return (
+    <Sheet open={bot !== null} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent side="right" className="w-full overflow-hidden sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Tune · {bot?.config.name}</SheetTitle>
+          <SheetDescription>
+            Paper-mode parameters. Changes apply live and persist across restarts.
+          </SheetDescription>
+        </SheetHeader>
+        {/* keyed remount seeds fresh initial state per bot — no effect needed */}
+        {bot && <BotConfigForm key={bot.config.id} bot={bot} onClose={onClose} />}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }) {
+  const update = useUpdateBotConfig();
+  const [values, setValues] = React.useState<Record<string, string>>(() =>
+    Object.fromEntries(FIELDS.map((f) => [f.key, String(bot.config[f.key] ?? "")])),
+  );
+
+  function save() {
+    const payload: Record<string, number> = {};
+    for (const f of FIELDS) {
+      const raw = values[f.key];
+      const n = Number(raw);
+      if (raw !== "" && !Number.isNaN(n) && n !== bot.config[f.key]) {
+        payload[f.key] = n;
+      }
+    }
+    if (Object.keys(payload).length === 0) {
+      toast.info("No changes to save");
+      return;
+    }
+    update.mutate(
+      { botId: bot.config.id, update: payload },
+      {
+        onSuccess: () => {
+          toast.success(`${bot.config.name} updated`);
+          onClose();
+        },
+        onError: (err) =>
+          toast.error(err instanceof Error ? err.message : "Update failed"),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-4 px-4 py-4">
+      {FIELDS.map((f) => (
+        <div key={f.key} className="space-y-1">
+          <label className="flex items-baseline justify-between text-xs">
+            <span className="font-medium">{f.label}</span>
+            <span className="text-muted-foreground">{f.hint}</span>
+          </label>
+          <Input
+            type="number"
+            inputMode="decimal"
+            value={values[f.key] ?? ""}
+            onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            className="font-mono"
+          />
+        </div>
+      ))}
+      <Button className="w-full" disabled={update.isPending} onClick={save}>
+        {update.isPending ? "Saving…" : "Save changes"}
+      </Button>
+    </div>
   );
 }
 

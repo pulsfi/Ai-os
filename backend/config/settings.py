@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     # slippage haircut, and per-trade gains are capped to a realizable level.
     bots_exit_slippage_bps: int = 200  # 2% haircut on every simulated exit
     bots_max_gain_pct: float = 100.0  # cap credited gain per trade (anti-moonshot)
+    # User tuning overrides (take-profit, size, …) persist here across restarts.
+    bots_overrides_path: str = "data/bot_overrides.json"
 
     # --- daily fleet report (auto vault write; same constrained path) ---
     daily_report_enabled: bool = False  # true = write the diary automatically

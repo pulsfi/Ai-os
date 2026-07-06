@@ -268,6 +268,29 @@ export function useBotTrades(botId: string | null, limit = 50) {
   });
 }
 
+/** Tune a bot's parameters (paper only); refreshes the fleet on success. */
+export function useUpdateBotConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      botId,
+      update,
+    }: {
+      botId: string;
+      update: Partial<{
+        usd_per_trade: number;
+        max_open_positions: number;
+        take_profit_pct: number;
+        stop_loss_pct: number;
+        trail_after_pct: number;
+        trail_drop_pct: number;
+        interval_s: number;
+      }>;
+    }) => botsService.updateConfig(botId, update),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.bots }),
+  });
+}
+
 /** Wipe the paper track record — refreshes every bot view. */
 export function useResetLedger() {
   const queryClient = useQueryClient();

@@ -3,7 +3,7 @@
  * Zod-validated. Components never call these directly; they use the
  * TanStack Query hooks in src/hooks.
  */
-import { getValidated, postValidated } from "./client";
+import { getValidated, patchValidated, postValidated } from "./client";
 import {
   agentControlResultSchema,
   agentDetailSchema,
@@ -178,6 +178,21 @@ export const botsService = {
   /** POST /bots/reset — wipe the paper track record (paper data only). */
   reset: (): Promise<ResetResult> =>
     postValidated("/bots/reset", undefined, resetResultSchema),
+
+  /** PATCH /bots/{id}/config — tune a bot's parameters (paper only). */
+  updateConfig: (
+    botId: string,
+    update: Partial<{
+      usd_per_trade: number;
+      max_open_positions: number;
+      take_profit_pct: number;
+      stop_loss_pct: number;
+      trail_after_pct: number;
+      trail_drop_pct: number;
+      interval_s: number;
+    }>,
+  ): Promise<BotStatus> =>
+    patchValidated(`/bots/${encodeURIComponent(botId)}/config`, update, botStatusSchema),
 };
 
 export const executionService = {

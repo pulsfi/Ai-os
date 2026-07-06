@@ -520,9 +520,22 @@ each agent queries live data / live system state and emits a real result.
 - Tests: 150/150 (11 new: live-ledger confirm/fail/pending/reconcile/
   idempotent/error-safe, alert buffer + endpoints + kill-switch alert).
 
+### Done (2026-07-06, third pass)
+
+- **#6 infrastructure — editable bot configs from the UI.** Each bot has
+  a Tune sheet (sliders icon) to adjust position size, max positions,
+  take-profit, stop-loss, and trailing stops. `PATCH /bots/{id}/config`
+  applies changes to the live runner and persists them
+  (`data/bot_overrides.json`, gitignored) so they survive restarts.
+  Paper-only; validated server-side. Tests cover the persist/reload cycle.
+  (Actual data-driven *retuning* still waits for the freshly-reset record
+  to build a few clean days.)
+
 ### Remaining Stage 7
 
 - **#3 Bot signing path** — the real autonomous-live work (secure wallet,
-  tx build/sign/send, priority fees, tiny-size ramp). Still gated.
-- **#6 Strategy tuning round 2** — retune from the now-honest record
-  (needs a few days of clean data first).
+  tx build/sign/send, priority fees, tiny-size ramp). DELIBERATELY still
+  gated: it needs a backend-held key + a proven track record, and the
+  scorecard is red (0 trades since the honest-pricing reset). Not built.
+- **#6 retune** — adjust parameters from the honest record once it has a
+  few days of clean data. The tuning UI above is now ready for it.

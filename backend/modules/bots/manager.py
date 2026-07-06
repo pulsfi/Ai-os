@@ -16,8 +16,11 @@ from pathlib import Path
 
 from config import Settings
 from core.exceptions import NotFoundError
+import json
+
 from models.schemas.bots import (
     BotConfig,
+    BotConfigUpdate,
     BotControlResult,
     BotPerformance,
     BotStatus,
@@ -110,8 +113,13 @@ class BotManager:
             "graduation_momentum": GraduationMomentum(pumpfun, market),
             "trend_scalper": TrendScalper(pumpfun, market),
         }
+        self._overrides_path = Path(settings.bots_overrides_path)
+        self._overrides = self._load_overrides()
         self._runners: dict[str, BotRunner] = {}
         for config in _default_configs(settings):
+            # Apply any saved user tuning on top of the defaults.
+            if self._overrides.get(config.id):
+                config = config.model_copy(update=self._overrides[config.id])
             self._runners[config.id] = BotRunner(
                 config,
                 strategies[config.strategy],
@@ -120,6 +128,34 @@ class BotManager:
                 max_gain_pct=settings.bots_max_gain_pct,
             )
         logger.info("Bot fleet built: %s (PAPER MODE)", ", ".join(self._runners))
+
+    # -- config tuning ------------------------------------------------------
+
+    def _load_overrides(self) -> dict[str, dict]:
+        try:
+            return json.loads(self._overrides_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _persist_overrides(self) -> None:
+        try:
+            self._overrides_path.parent.mkdir(parents=True, exist_ok=True)
+            self._overrides_path.write_text(
+                json.dumps(self._overrides, indent=2), encoding="utf-8"
+            )
+        except OSError as exc:  # persistence is best-effort
+            logger.warning("could not persist bot overrides: %s", exc)
+
+    def update_config(self, bot_id: str, update: BotConfigUpdate) -> BotStatus:
+        """Apply a tuning change to a bot's config (paper only) and persist it."""
+        runner = self._runner(bot_id)  # 404 for unknown bots
+        changes = update.model_dump(exclude_none=True)
+        if changes:
+            runner.config = runner.config.model_copy(update=changes)
+            self._overrides[bot_id] = {**self._overrides.get(bot_id, {}), **changes}
+            self._persist_overrides()
+            logger.info("bot %s config updated: %s", bot_id, changes)
+        return runner.status()
 
     # -- fleet control -----------------------------------------------------
 

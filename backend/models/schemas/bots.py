@@ -36,6 +36,21 @@ class BotConfig(BaseModel):
     trail_drop_pct: float | None = Field(default=None, gt=0)
 
 
+class BotConfigUpdate(BaseModel):
+    """Tunable subset of a bot's config — all optional; None = leave as-is.
+
+    Paper mode: changing these adjusts the simulation, never real money.
+    """
+
+    usd_per_trade: float | None = Field(default=None, gt=0)
+    max_open_positions: int | None = Field(default=None, ge=1, le=10)
+    take_profit_pct: float | None = Field(default=None, gt=0, le=1000)
+    stop_loss_pct: float | None = Field(default=None, gt=0, le=100)
+    trail_after_pct: float | None = Field(default=None, gt=0, le=1000)
+    trail_drop_pct: float | None = Field(default=None, gt=0, le=100)
+    interval_s: float | None = Field(default=None, ge=2, le=3600)
+
+
 class BotStatus(BaseModel):
     """Live view of one bot: config + runtime + ledger stats."""
 

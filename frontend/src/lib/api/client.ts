@@ -93,3 +93,22 @@ export async function postValidated<T>(
   }
   return parsed.data;
 }
+
+/** PATCH + Zod-validate. */
+export async function patchValidated<T>(
+  url: string,
+  body: unknown,
+  schema: ZodType<T>,
+): Promise<T> {
+  const res = await http.patch(url, body);
+  const parsed = schema.safeParse(res.data);
+  if (!parsed.success) {
+    throw new ApiError(
+      `Unexpected response shape from ${url}`,
+      "contract_mismatch",
+      res.status,
+      parsed.error.issues,
+    );
+  }
+  return parsed.data;
+}

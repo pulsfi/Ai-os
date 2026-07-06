@@ -282,6 +282,11 @@ class StubManager:
             detail="ok. Paper mode: virtual USD only.",
         )
 
+    def update_config(self, bot_id, update):
+        s = self.statuses()[0]
+        return s.model_copy(update={"config": s.config.model_copy(
+            update=update.model_dump(exclude_none=True))})
+
 
 @pytest.fixture()
 def bots_client(settings: Settings) -> TestClient:
@@ -314,3 +319,43 @@ def test_control_endpoint_real_actions(bots_client: TestClient) -> None:
 
 def test_control_endpoint_rejects_unknown_action(bots_client: TestClient) -> None:
     assert bots_client.post("/api/v1/bots/sniper/explode").status_code == 422
+
+
+def test_update_config_endpoint(bots_client: TestClient) -> None:
+    res = bots_client.patch(
+        "/api/v1/bots/sniper/config", json={"take_profit_pct": 25, "usd_per_trade": 20}
+    )
+    assert res.status_code == 200
+    assert res.json()["config"]["take_profit_pct"] == 25
+    assert res.json()["config"]["usd_per_trade"] == 20
+
+
+def test_update_config_validates(bots_client: TestClient) -> None:
+    # take_profit must be > 0
+    assert bots_client.patch(
+        "/api/v1/bots/sniper/config", json={"take_profit_pct": 0}
+    ).status_code == 422
+
+
+def test_config_override_persists_and_reloads(tmp_path: Path, settings: Settings) -> None:
+    """update_config writes overrides; a fresh manager loads them."""
+    from config import Settings as S
+    from models.schemas.bots import BotConfigUpdate
+    from modules.bots.manager import BotManager
+
+    s = S(
+        _env_file=None,
+        bots_db_path=str(tmp_path / "b.db"),
+        bots_overrides_path=str(tmp_path / "ov.json"),
+        pumpportal_enabled=False,
+        log_level="WARNING",
+    )
+    mgr = BotManager(s)
+    status = mgr.update_config("sniper", BotConfigUpdate(take_profit_pct=33.0))
+    assert status.config.take_profit_pct == 33.0
+    assert (tmp_path / "ov.json").is_file()
+    # A brand-new manager picks up the saved override.
+    mgr2 = BotManager(s)
+    assert mgr2.statuses()  # built ok
+    sniper = next(b for b in mgr2.statuses() if b.config.id == "sniper")
+    assert sniper.config.take_profit_pct == 33.0
