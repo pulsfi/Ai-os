@@ -1,0 +1,78 @@
+# OS AI — production stack for a VPS (Ubuntu + Docker).
+#
+# One command runs everything: reverse-proxy (Nginx+HTTPS) -> frontend +
+# backend, with the bot/live ledgers on a named volume so they survive
+# redeploys. Secrets come from a .env file next to this one (see DEPLOY.md).
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Required .env keys: DOMAIN, HELIUS_API_KEY, BIRDEYE_API_KEY, and any
+# optional provider/alert keys. NEXT_PUBLIC_* are derived from DOMAIN.
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_JSON: "true"
+      # Browser calls arrive same-origin via Nginx, so CORS can be tight.
+      CORS_ORIGINS: '["https://${DOMAIN}"]'
+      BOTS_AUTOSTART: "true"
+      AGENTS_RUNTIME_ENABLED: "true"
+      DAILY_REPORT_ENABLED: "true"
+      # Ledgers + tuning overrides persist on the named volume.
+      BOTS_DB_PATH: /app/data/paper_bots.db
+      LIVE_TRADES_DB_PATH: /app/data/live_trades.db
+      BOTS_OVERRIDES_PATH: /app/data/bot_overrides.json
+      # No Postgres/Redis in this minimal stack — the app runs fine without
+      # them (in-memory cache, no history persistence). Add them later if
+      # you want /market/history charts.
+    volumes:
+      - botdata:/app/data
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: "https://${DOMAIN}"
+        NEXT_PUBLIC_WS_URL: "wss://${DOMAIN}"
+        NEXT_PUBLIC_API_PREFIX: /api/v1
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/htpasswd:/etc/nginx/htpasswd:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
+    environment:
+      DOMAIN: ${DOMAIN}
+
+  # Obtains + renews the Let's Encrypt certificate. Runs, exits, and the
+  # host cron (see DEPLOY.md) re-runs it to renew.
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'"
+
+volumes:
+  botdata:
+  certbot-certs:
+  certbot-www:

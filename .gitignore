@@ -1,6 +1,9 @@
 # --- secrets: never commit environment files ---
 .env
 **/.env
+.env.prod
+# Nginx Basic Auth password file (created on the server)
+deploy/htpasswd
 
 # --- python ---
 backend/.venv/

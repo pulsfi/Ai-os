@@ -3,7 +3,10 @@
 __pycache__/
 *.pyc
 .env
+.env.*
 .pytest_cache/
 .gitignore
 docs/
 tests/
+data/
+run-24-7.bat

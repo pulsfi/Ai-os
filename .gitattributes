@@ -1,0 +1,4 @@
+# Force LF on files that run on the Linux server — CRLF breaks bash/nginx.
+*.sh            text eol=lf
+deploy/nginx.conf text eol=lf
+*.bat           text eol=crlf

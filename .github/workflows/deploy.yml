@@ -1,0 +1,40 @@
+# Auto-deploy to the VPS on every push to main.
+#
+# It SSHes into the server, pulls the latest code, and rebuilds the stack.
+# The server keeps its own .env (secrets never touch GitHub).
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   VPS_HOST         the server IP or hostname
+#   VPS_USER         the deploy user (e.g. "deploy")
+#   VPS_SSH_KEY      a private SSH key whose public half is in the user's
+#                    ~/.ssh/authorized_keys on the server
+#   VPS_APP_DIR      absolute path to the repo on the server (e.g. /opt/os-ai)
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.VPS_APP_DIR }}"
+            git fetch --all
+            git reset --hard origin/main
+            docker compose -f docker-compose.prod.yml up -d --build
+            docker image prune -f
