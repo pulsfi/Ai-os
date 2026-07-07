@@ -102,14 +102,25 @@ export function PumpFunCard() {
             ))}
           </div>
         )}
-        {active.isError && (
+        {/* Only a hard error (no data at all) takes over the card. A
+            transient blip during a background refresh keeps the last
+            good list visible with a subtle notice — pump.fun's public
+            API drops connections now and then. */}
+        {active.isError && !active.data && (
           <WidgetError error={active.error} onRetry={() => void active.refetch()} />
         )}
         {active.data && (
-          <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
-            {active.data.map((coin) => (
-              <CoinRow key={coin.mint} coin={coin} />
-            ))}
+          <div className="space-y-2">
+            {active.isError && (
+              <p className="text-[11px] text-muted-foreground">
+                Reconnecting to pump.fun… showing the last update.
+              </p>
+            )}
+            <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
+              {active.data.map((coin) => (
+                <CoinRow key={coin.mint} coin={coin} />
+              ))}
+            </div>
           </div>
         )}
       </CardContent>

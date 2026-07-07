@@ -33,11 +33,11 @@ def coin_payload(**overrides) -> dict:
     return base
 
 
-def client_with(handler) -> PumpFunClient:
+def client_with(handler, max_retries: int = 0) -> PumpFunClient:
     http = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="https://test"
     )
-    return PumpFunClient(http, min_interval_s=0.0)
+    return PumpFunClient(http, min_interval_s=0.0, max_retries=max_retries)
 
 
 async def test_new_coins_parsed_and_progress_computed() -> None:
@@ -80,6 +80,23 @@ async def test_upstream_failure_is_external_service_error() -> None:
     with pytest.raises(ExternalServiceError):
         await client.get_new_coins()
     assert client.stats()["errors"] == 1
+
+
+async def test_transient_blip_is_retried_and_recovers() -> None:
+    """A DNS/connect blip on the first try is absorbed by a retry."""
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("getaddrinfo failed")
+        return httpx.Response(200, json=[coin_payload()])
+
+    client = client_with(handler, max_retries=2)
+    coins = await client.get_new_coins()
+    assert len(coins) == 1  # recovered
+    assert calls["n"] == 2  # failed once, retried, succeeded
+    assert client.stats()["errors"] == 0  # a recovered blip isn't an error
 
 
 def test_endpoints_return_normalized_coins(settings: Settings) -> None:

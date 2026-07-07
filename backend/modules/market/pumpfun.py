@@ -77,7 +77,10 @@ class PumpFunClient:
     """Read-only pump.fun discovery: new launches, graduating, coin detail."""
 
     def __init__(
-        self, http: httpx.AsyncClient | None = None, min_interval_s: float = 1.0
+        self,
+        http: httpx.AsyncClient | None = None,
+        min_interval_s: float = 1.0,
+        max_retries: int = 2,
     ) -> None:
         self._http = http or httpx.AsyncClient(
             base_url=_BASE_URL,
@@ -86,6 +89,7 @@ class PumpFunClient:
             headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
         )
         self._min_interval = min_interval_s
+        self._max_retries = max_retries
         self._last_call = 0.0
         self._calls = 0
         self._errors = 0
@@ -97,22 +101,43 @@ class PumpFunClient:
             await asyncio.sleep(wait)
         self._last_call = time.monotonic()
         self._calls += 1
-        try:
-            res = await self._http.get(path, params=params)
-        except httpx.HTTPError as exc:
-            self._errors += 1
-            raise ExternalServiceError(
-                f"pump.fun unreachable: {type(exc).__name__}"
-            ) from exc
-        if res.status_code == 404:
-            raise NotFoundError("pump.fun: coin not found")
-        if res.status_code != 200:
-            self._errors += 1
-            raise ExternalServiceError(
-                f"pump.fun answered {res.status_code}",
-                details={"status": res.status_code},
-            )
-        return res.json()
+
+        # Retry transient failures (DNS/connect drops, 429, 5xx) with backoff
+        # so a blip is absorbed instead of surfacing to the bots/UI. A 404 or
+        # other 4xx is a real answer and is never retried.
+        last_status: int | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                res = await self._http.get(path, params=params)
+            except httpx.HTTPError as exc:
+                if attempt < self._max_retries:
+                    await asyncio.sleep(0.4 * (2**attempt))
+                    continue
+                self._errors += 1
+                raise ExternalServiceError(
+                    f"pump.fun unreachable: {type(exc).__name__}"
+                ) from exc
+
+            if res.status_code == 404:
+                raise NotFoundError("pump.fun: coin not found")
+            if res.status_code == 429 or res.status_code >= 500:
+                last_status = res.status_code
+                if attempt < self._max_retries:
+                    await asyncio.sleep(0.4 * (2**attempt))
+                    continue
+            if res.status_code != 200:
+                self._errors += 1
+                raise ExternalServiceError(
+                    f"pump.fun answered {res.status_code}",
+                    details={"status": res.status_code or last_status},
+                )
+            return res.json()
+
+        # Exhausted retries on a retryable status.
+        self._errors += 1
+        raise ExternalServiceError(
+            f"pump.fun answered {last_status}", details={"status": last_status}
+        )
 
     async def get_new_coins(self, limit: int = 20) -> list[PumpCoin]:
         """Freshest launches, newest first."""
