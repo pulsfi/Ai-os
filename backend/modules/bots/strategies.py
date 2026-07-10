@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from core.exceptions import AppError
+from modules.bots.scoring import ConfidenceScore, score_launch
 from modules.market import MarketManager
 from modules.market.helius import HeliusClient
 from modules.market.pumpfun import PumpCoin, PumpFunClient
 from modules.market.pumpportal import LaunchStream
+from modules.solana import RpcClient
 
 logger = logging.getLogger(__name__)
 
@@ -94,26 +96,23 @@ class NewLaunchSniper(Strategy):
         market: MarketManager,
         helius: HeliusClient | None = None,
         stream: LaunchStream | None = None,
+        rpc: RpcClient | None = None,
         max_age_s: float = 300.0,
         min_mcap_usd: float = 5_000.0,
         max_mcap_usd: float = 60_000.0,
-        # Balance: too strict (8 swaps / 6 wallets) meant 0 trades over
-        # thousands of ticks — a bot that never fires teaches nothing. These
-        # still demand real buying, but let it participate so the paper
-        # record can actually judge the flow-confirmed sniper.
-        min_flow_swaps: int = 4,
-        min_flow_wallets: int = 3,
-        min_buy_ratio_pct: float = 58.0,
+        # Confidence gate: score every candidate 0-100 on measurable
+        # on-chain + flow signals; enter only at/above this. Missing demand
+        # data can't reach it, so the bot stays out rather than guessing.
+        min_confidence: float = 55.0,
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius
         self._stream = stream
+        self._rpc = rpc
         self._max_age_s = max_age_s
         self._min_mcap = min_mcap_usd
         self._max_mcap = max_mcap_usd
-        self._min_flow_swaps = min_flow_swaps
-        self._min_flow_wallets = min_flow_wallets
-        self._min_buy_ratio = min_buy_ratio_pct
+        self._min_confidence = min_confidence
 
     async def _sol_usd(self) -> float | None:
         """SOL/USD from the cached watchlist (30s TTL) for mcapSol -> USD."""
@@ -126,28 +125,45 @@ class NewLaunchSniper(Strategy):
                 return t.price_usd
         return None
 
-    async def _flow_note(self, mint: str) -> str | None:
-        """Flow-confirmation verdict: a note when confirmed, None to skip.
+    async def _confidence(self, mint: str, mcap_usd: float | None, age_s: float | None) -> ConfidenceScore:
+        """Gather measurable signals and score the launch 0-100.
 
-        Without a configured Helius client the gate is inactive (the
-        basic filters still apply) — stated in the entry note honestly.
+        On-chain authority state (RPC) + demand flow (Helius) + market
+        context. Anything that can't be fetched counts as unknown (0
+        points) — never fabricated. The verdict is fully explainable and
+        gets written into the trade note.
         """
-        if self._helius is None or not self._helius.is_configured:
-            return "flow gate off (no HELIUS_API_KEY)"
-        try:
-            activity = await self._helius.get_token_activity(mint, limit=30)
-        except AppError:
-            return None  # can't verify flow -> don't enter
-        if (
-            activity.swaps < self._min_flow_swaps
-            or activity.unique_wallets < self._min_flow_wallets
-            or activity.buy_ratio_pct is None
-            or activity.buy_ratio_pct < self._min_buy_ratio
-        ):
-            return None
-        return (
-            f"flow {activity.buy_ratio_pct}% buys "
-            f"({activity.buys}B/{activity.sells}S, {activity.unique_wallets} wallets)"
+        # Demand flow (buys vs sells, wallets, swaps).
+        buy_ratio = wallets = swaps = None
+        if self._helius is not None and self._helius.is_configured:
+            try:
+                act = await self._helius.get_token_activity(mint, limit=30)
+                buy_ratio, wallets, swaps = act.buy_ratio_pct, act.unique_wallets, act.swaps
+            except AppError:
+                pass  # unknown flow -> scored as 0, won't reach threshold
+
+        # On-chain mint/freeze authority (rug / honeypot gates).
+        mint_revoked = freeze_revoked = None
+        if self._rpc is not None:
+            try:
+                auth = await self._rpc.get_token_authorities(mint)
+                mint_revoked = auth.mint_authority is None
+                freeze_revoked = auth.freeze_authority is None
+            except AppError:
+                pass  # unknown authority -> 0 points (not a hard reject)
+
+        return score_launch(
+            mcap_usd=mcap_usd,
+            age_s=age_s,
+            mint_revoked=mint_revoked,
+            freeze_revoked=freeze_revoked,
+            buy_ratio_pct=buy_ratio,
+            unique_wallets=wallets,
+            swaps=swaps,
+            min_mcap_usd=self._min_mcap,
+            max_mcap_usd=self._max_mcap,
+            max_age_s=self._max_age_s,
+            min_confidence=self._min_confidence,
         )
 
     async def _stream_candidates(
@@ -177,18 +193,18 @@ class NewLaunchSniper(Strategy):
             mcap_usd = event.mcap_sol * sol_usd
             if not (self._min_mcap <= mcap_usd <= self._max_mcap):
                 continue
-            flow = await self._flow_note(event.mint)
-            if flow is None:
-                continue
-            age_s = int(_time.monotonic() - event.received_at)
+            age_s = _time.monotonic() - event.received_at
+            verdict = await self._confidence(event.mint, mcap_usd, age_s)
+            if not verdict.approved:
+                continue  # scored too low / hard-rejected -> skip this launch
             signals.append(
                 EntrySignal(
                     mint=event.mint,
                     symbol=event.symbol or event.mint[:6],
                     price_usd=mcap_usd / _PUMP_SUPPLY,
                     note=(
-                        f"stream-detected {age_s}s ago, mcap ${mcap_usd:,.0f}, "
-                        f"{flow} (price=mcap/1B)"
+                        f"stream-detected {int(age_s)}s ago, mcap ${mcap_usd:,.0f}, "
+                        f"{verdict.note()} (price=mcap/1B)"
                     ),
                 )
             )
@@ -217,18 +233,19 @@ class NewLaunchSniper(Strategy):
                     or coin.reply_count < 1
                 ):
                     continue
-                flow = await self._flow_note(coin.mint)
-                if flow is None:
-                    continue  # no confirmed buying behind the move
+                age_s = (now - coin.created_at).total_seconds()
+                verdict = await self._confidence(coin.mint, coin.usd_market_cap, age_s)
+                if not verdict.approved:
+                    continue  # scored too low / hard-rejected
                 signals.append(
                     EntrySignal(
                         mint=coin.mint,
                         symbol=coin.symbol or coin.mint[:6],
                         price_usd=price,
                         note=(
-                            f"new launch {int((now - coin.created_at).total_seconds())}s old, "
+                            f"new launch {int(age_s)}s old, "
                             f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies, "
-                            f"{flow} (price=mcap/1B)"
+                            f"{verdict.note()} (price=mcap/1B)"
                         ),
                     )
                 )

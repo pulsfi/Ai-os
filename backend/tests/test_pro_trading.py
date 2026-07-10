@@ -228,17 +228,32 @@ async def test_flow_scalper_skips_weak_flow() -> None:
     assert await scalp.find_entries(set(), 5) == []
 
 
-def fresh_launch_sniper(helius: object) -> NewLaunchSniper:
+class StubRpc:
+    """Returns revoked (safe) authorities so scoring can pass on good flow."""
+
+    def __init__(self, mint_auth=None, freeze_auth=None) -> None:
+        from models.schemas.solana import TokenAuthorities
+
+        self._auth = TokenAuthorities(mint_authority=mint_auth, freeze_authority=freeze_auth)
+
+    async def get_token_authorities(self, mint: str):
+        return self._auth
+
+
+def fresh_launch_sniper(helius: object, rpc: object | None = None) -> NewLaunchSniper:
     coins = [pump_coin("Fresh1", 10_000)]
-    return NewLaunchSniper(StubPumpFun(coins), market=None, helius=helius)  # type: ignore[arg-type]
+    return NewLaunchSniper(
+        StubPumpFun(coins), market=None, helius=helius,  # type: ignore[arg-type]
+        rpc=rpc or StubRpc(),
+    )
 
 
-async def test_sniper_enters_on_confirmed_flow() -> None:
-    # Meets the tightened bar: >=8 swaps, >=6 wallets, >=65% buys.
+async def test_sniper_enters_on_high_confidence() -> None:
+    # Revoked authorities + strong broad buying -> score clears the bar.
     sniper = fresh_launch_sniper(StubHelius(activity(buys=8, sells=2, wallets=7)))
     signals = await sniper.find_entries(set(), 3)
     assert len(signals) == 1
-    assert "flow 80.0% buys" in signals[0].note
+    assert "confidence" in signals[0].note
 
 
 async def test_sniper_skips_sell_pressure() -> None:
@@ -246,23 +261,31 @@ async def test_sniper_skips_sell_pressure() -> None:
     assert await sniper.find_entries(set(), 3) == []
 
 
-async def test_sniper_skips_too_few_wallets() -> None:
+async def test_sniper_hard_rejects_single_wallet() -> None:
+    # 100% buys but one wallet = wash/whale -> hard reject regardless of ratio.
     sniper = fresh_launch_sniper(StubHelius(activity(buys=6, sells=0, wallets=1)))
     assert await sniper.find_entries(set(), 3) == []
 
 
+async def test_sniper_hard_rejects_active_mint_authority() -> None:
+    # Great flow, but the mint authority is still active -> rug gate fires.
+    sniper = fresh_launch_sniper(
+        StubHelius(activity(buys=9, sells=1, wallets=10)),
+        rpc=StubRpc(mint_auth="SomeAuthorityAddr"),
+    )
+    assert await sniper.find_entries(set(), 3) == []
+
+
 async def test_sniper_skips_when_flow_lookup_fails() -> None:
-    """Conservative: can't verify flow -> no entry."""
+    """Can't verify demand -> no entry (reject on missing info)."""
     sniper = fresh_launch_sniper(StubHelius(None))
     assert await sniper.find_entries(set(), 3) == []
 
 
-async def test_sniper_without_helius_still_trades() -> None:
-    """No key = gate off (stated in the note), basic filters still apply."""
+async def test_sniper_without_flow_stays_out() -> None:
+    """No Helius = no demand signal = can't reach the confidence bar -> out."""
     sniper = fresh_launch_sniper(None)
-    signals = await sniper.find_entries(set(), 3)
-    assert len(signals) == 1
-    assert "flow gate off" in signals[0].note
+    assert await sniper.find_entries(set(), 3) == []
 
 
 # --- report scheduler -----------------------------------------------------------

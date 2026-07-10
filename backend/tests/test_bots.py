@@ -124,6 +124,25 @@ async def test_graduation_entry_band_excludes_late_entries() -> None:
     assert [s.mint for s in signals] == ["InBand"]
 
 
+class _GoodHelius:
+    is_configured = True
+
+    async def get_token_activity(self, mint: str, limit: int = 30):
+        from modules.market.helius import TokenActivity
+
+        return TokenActivity(
+            mint=mint, sampled_txs=20, swaps=20, buys=17, sells=3,
+            buy_ratio_pct=85.0, unique_wallets=12,
+        )
+
+
+class _OkRpc:
+    async def get_token_authorities(self, mint: str):
+        from models.schemas.solana import TokenAuthorities
+
+        return TokenAuthorities(mint_authority=None, freeze_authority=None)
+
+
 async def test_sniper_filters_and_prices() -> None:
     coins = [
         pump_coin("Fresh1", 10_000),                 # good
@@ -133,7 +152,10 @@ async def test_sniper_filters_and_prices() -> None:
         pump_coin("Done", 10_000, complete=True),    # graduated
         pump_coin("Fresh2", 20_000),                 # good
     ]
-    sniper = NewLaunchSniper(StubPumpFun(coins), market=None)  # type: ignore[arg-type]
+    sniper = NewLaunchSniper(
+        StubPumpFun(coins), market=None,  # type: ignore[arg-type]
+        helius=_GoodHelius(), rpc=_OkRpc(),
+    )
     signals = await sniper.find_entries(held_mints=set(), slots=5)
     assert [s.mint for s in signals] == ["Fresh1", "Fresh2"]
     # price = mcap / 1B fixed supply

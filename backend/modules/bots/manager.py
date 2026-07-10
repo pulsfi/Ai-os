@@ -39,6 +39,7 @@ from modules.market import get_market_manager
 from modules.market.helius import get_helius_client
 from modules.market.pumpfun import get_pumpfun_client
 from modules.market.pumpportal import LaunchStream, get_launch_stream
+from modules.solana import get_rpc_client
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,9 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             name="Launch Sniper",
             strategy="new_launch_sniper",
             description=(
-                "Snipes pump.fun launches the moment the live stream pushes "
-                "them — flow-confirmed via Helius (real buys behind the move)"
+                "Scores every launch 0-100 on real signals (authority rug/"
+                "honeypot gates, buy pressure, unique wallets, mcap, age) and "
+                "only buys high-confidence ones — never blind"
             ),
             interval_s=settings.bots_sniper_interval_seconds,
             usd_per_trade=usd,
@@ -145,7 +147,8 @@ class BotManager:
         )
         strategies = {
             "new_launch_sniper": NewLaunchSniper(
-                pumpfun, market, helius, stream=self._stream
+                pumpfun, market, helius, stream=self._stream,
+                rpc=get_rpc_client(settings),
             ),
             "graduation_momentum": GraduationMomentum(pumpfun, market),
             "trend_scalper": TrendScalper(pumpfun, market),
