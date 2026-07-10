@@ -4,12 +4,29 @@
 services:
   api:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    # Load API keys + settings from backend/.env on the server (gitignored,
+    # survives `git reset --hard`). Optional so a missing file never breaks
+    # the deploy. Anything in `environment:` below overrides it.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://osai:osai@db:5432/osai
       REDIS_URL: redis://redis:6379/0
-      ENVIRONMENT: development
+      # The fleet + agent pipeline must start themselves on every boot —
+      # this is what makes trades happen on the server, not just locally.
+      BOTS_AUTOSTART: "true"
+      AGENTS_RUNTIME_ENABLED: "true"
+      # Ledgers + tuning on a named volume so a redeploy never wipes the
+      # paper record (default paths are under /app/data).
+      BOTS_DB_PATH: /app/data/paper_bots.db
+      LIVE_TRADES_DB_PATH: /app/data/live_trades.db
+      BOTS_OVERRIDES_PATH: /app/data/bot_overrides.json
+    volumes:
+      - botdata:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -44,3 +61,4 @@ services:
 
 volumes:
   pgdata:
+  botdata:
