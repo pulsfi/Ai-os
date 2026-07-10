@@ -94,14 +94,16 @@ class NewLaunchSniper(Strategy):
         market: MarketManager,
         helius: HeliusClient | None = None,
         stream: LaunchStream | None = None,
-        max_age_s: float = 180.0,
-        min_mcap_usd: float = 8_000.0,
-        max_mcap_usd: float = 45_000.0,
-        # Selectivity: the paper record showed loose entries lose ~85% of
-        # the time. Demand real, broad buying before risking a slot.
-        min_flow_swaps: int = 8,
-        min_flow_wallets: int = 6,
-        min_buy_ratio_pct: float = 65.0,
+        max_age_s: float = 300.0,
+        min_mcap_usd: float = 5_000.0,
+        max_mcap_usd: float = 60_000.0,
+        # Balance: too strict (8 swaps / 6 wallets) meant 0 trades over
+        # thousands of ticks — a bot that never fires teaches nothing. These
+        # still demand real buying, but let it participate so the paper
+        # record can actually judge the flow-confirmed sniper.
+        min_flow_swaps: int = 4,
+        min_flow_wallets: int = 3,
+        min_buy_ratio_pct: float = 58.0,
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius
