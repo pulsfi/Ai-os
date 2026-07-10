@@ -9,6 +9,7 @@
  *   data: {"type":"error","message":"..."}
  */
 import { apiBaseUrl } from "@/config/env";
+import { authToken } from "@/lib/auth";
 import { ApiError } from "./client";
 import type { ApiErrorEnvelope } from "@/types/api";
 
@@ -32,9 +33,13 @@ export async function streamChat(
   { onDelta }: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<string> {
+  const token = authToken.get();
   const res = await fetch(`${apiBaseUrl}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "X-API-Key": token } : {}),
+    },
     body: JSON.stringify({ messages }),
     signal,
   }).catch(() => {

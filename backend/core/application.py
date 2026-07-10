@@ -9,8 +9,9 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from api.router import api_router
 from config import Settings, get_settings
@@ -107,13 +108,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    # --- API auth gate ---------------------------------------------------
+    # When a token is configured, every request must present it (header
+    # X-API-Key or Authorization: Bearer). Health checks stay open so
+    # uptime monitors work; the WebSocket authenticates via ?token= inside
+    # its own handler (browsers can't set WS headers), so it's exempt here.
+    if settings.api_auth_token:
+        token = settings.api_auth_token
+        prefix = settings.api_v1_prefix
+
+        @app.middleware("http")
+        async def _auth(request: Request, call_next):  # type: ignore[no-untyped-def]
+            path = request.url.path
+            exempt = (
+                not path.startswith(prefix)
+                or path.endswith(("/health", "/ping"))
+                or "/ws" in path
+                or request.method == "OPTIONS"  # CORS preflight
+            )
+            if not exempt:
+                provided = request.headers.get("x-api-key", "")
+                if not provided:
+                    auth = request.headers.get("authorization", "")
+                    if auth.lower().startswith("bearer "):
+                        provided = auth[7:]
+                if provided != token:
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "error": {
+                                "code": "unauthorized",
+                                "message": "Missing or invalid API key.",
+                                "details": None,
+                            }
+                        },
+                    )
+            return await call_next(request)
+
     # The Next.js frontend calls this API from the browser; without CORS
     # every cross-origin request is blocked before it reaches a route.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],  # POST: /chat stream + /agents controls
+        allow_methods=["GET", "POST", "PATCH"],
         allow_headers=["*"],
     )
 

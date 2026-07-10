@@ -44,6 +44,10 @@ class Settings(BaseSettings):
 
     # --- api ---
     api_v1_prefix: str = "/api/v1"
+    # Shared secret required on every API call (header X-API-Key or a
+    # ?token= for the WebSocket). Empty = auth OFF (local dev/tests). Set
+    # it in production so the public API can't be controlled by anyone.
+    api_auth_token: str = ""
     # Browser origins allowed to call this API (the Next.js frontend).
     cors_origins: list[str] = [
         "http://localhost:3000",

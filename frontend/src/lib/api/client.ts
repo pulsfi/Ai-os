@@ -12,6 +12,7 @@ import axios, { AxiosError } from "axios";
 import type { ZodType } from "zod";
 
 import { apiBaseUrl } from "@/config/env";
+import { authToken } from "@/lib/auth";
 import type { ApiErrorEnvelope } from "@/types/api";
 
 export class ApiError extends Error {
@@ -32,6 +33,13 @@ export const http = axios.create({
   baseURL: apiBaseUrl,
   timeout: 30_000,
   headers: { Accept: "application/json" },
+});
+
+// Attach the API token (if the user has logged in) to every request.
+http.interceptors.request.use((config) => {
+  const token = authToken.get();
+  if (token) config.headers.set("X-API-Key", token);
+  return config;
 });
 
 http.interceptors.response.use(undefined, (error: AxiosError) => {

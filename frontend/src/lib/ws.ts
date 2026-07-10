@@ -7,8 +7,9 @@
  */
 import { env } from "@/config/env";
 import { fleetSnapshotSchema, type FleetSnapshot } from "@/lib/api/schemas";
+import { authToken } from "@/lib/auth";
 
-const WS_URL = `${env.NEXT_PUBLIC_WS_URL}${env.NEXT_PUBLIC_API_PREFIX}/ws`;
+const WS_BASE = `${env.NEXT_PUBLIC_WS_URL}${env.NEXT_PUBLIC_API_PREFIX}/ws`;
 
 export interface FleetSocketHandlers {
   onSnapshot: (snapshot: FleetSnapshot) => void;
@@ -24,7 +25,9 @@ export function connectFleetSocket({ onSnapshot, onStatus }: FleetSocketHandlers
 
   function open() {
     if (closed) return;
-    socket = new WebSocket(WS_URL);
+    // Browsers can't set WS headers, so the token rides in the query string.
+    const token = authToken.get();
+    socket = new WebSocket(token ? `${WS_BASE}?token=${encodeURIComponent(token)}` : WS_BASE);
 
     socket.onopen = () => {
       retryMs = 1_000; // healthy again — reset backoff

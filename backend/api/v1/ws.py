@@ -27,8 +27,14 @@ _PUSH_INTERVAL_S = 3.0
 @router.websocket("")
 async def fleet_stream(websocket: WebSocket) -> None:
     """Push a fleet snapshot every few seconds until the client leaves."""
-    await websocket.accept()
     settings = websocket.app.state.settings
+    # Auth: browsers can't set WS headers, so the token rides in ?token=.
+    if settings.api_auth_token and (
+        websocket.query_params.get("token") != settings.api_auth_token
+    ):
+        await websocket.close(code=1008)  # policy violation
+        return
+    await websocket.accept()
     manager = get_bot_manager(settings)
     logger.info("ws client connected (%s)", websocket.client)
     try:
