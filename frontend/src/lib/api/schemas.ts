@@ -432,6 +432,32 @@ export const tokenActivitySchema = z.object({
 
 export type TokenActivity = z.infer<typeof tokenActivitySchema>;
 
+// --- AI confidence score (the Decision Card engine) ------------------------
+
+export const scoreFactorSchema = z.object({
+  name: z.string(),
+  points: z.number(),
+  max_points: z.number(),
+  detail: z.string(),
+});
+
+export const tokenScoreSchema = z.object({
+  mint: z.string(),
+  score: z.number(),
+  approved: z.boolean(),
+  factors: z.array(scoreFactorSchema),
+  rejects: z.array(z.string()),
+  buy_ratio_pct: z.number().nullable(),
+  unique_wallets: z.number().nullable(),
+  liquidity_usd: z.number().nullable(),
+  market_cap: z.number().nullable(),
+  mint_revoked: z.boolean().nullable(),
+  freeze_revoked: z.boolean().nullable(),
+});
+
+export type TokenScore = z.infer<typeof tokenScoreSchema>;
+export type ScoreFactor = z.infer<typeof scoreFactorSchema>;
+
 // --- execution layer (Stage 5; ships disarmed) ------------------------------
 
 export const riskLimitsSchema = z.object({

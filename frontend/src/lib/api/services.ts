@@ -56,6 +56,7 @@ import {
   goLiveReadinessSchema,
   liveTradeSchema,
   tokenActivitySchema,
+  tokenScoreSchema,
   walletBalanceSchema,
   type Alert,
   type AlertsStatus,
@@ -65,6 +66,7 @@ import {
   type GoLiveReadiness,
   type LiveTrade,
   type TokenActivity,
+  type TokenScore,
   type WalletBalance,
   type TokenAuthorities,
   type TokenInfo,
@@ -126,6 +128,10 @@ export const marketService = {
   /** GET /market/activity/{mint} — live buy/sell flow (needs HELIUS_API_KEY). */
   getActivity: (mint: string): Promise<TokenActivity> =>
     getValidated(`/market/activity/${encodeURIComponent(mint)}`, tokenActivitySchema),
+
+  /** GET /market/score/{mint} — AI confidence score (0-100) + factors. */
+  getScore: (mint: string): Promise<TokenScore> =>
+    getValidated(`/market/score/${encodeURIComponent(mint)}`, tokenScoreSchema),
 };
 
 export const pumpfunService = {

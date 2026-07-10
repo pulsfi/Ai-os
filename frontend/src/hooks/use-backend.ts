@@ -130,6 +130,17 @@ export function useTokenActivity(mint: string) {
   });
 }
 
+/** AI confidence score for a token — the Decision Card engine. */
+export function useTokenScore(mint: string) {
+  return useQuery({
+    queryKey: ["market", "score", mint] as const,
+    queryFn: () => marketService.getScore(mint),
+    enabled: mint.length > 0,
+    retry: false,
+    refetchInterval: 30_000,
+  });
+}
+
 /** On-chain mint/freeze authority check — enabled when a mint is entered. */
 export function useTokenAuthorities(mint: string) {
   return useQuery({

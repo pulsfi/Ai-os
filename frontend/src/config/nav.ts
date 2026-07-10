@@ -1,78 +1,33 @@
 /**
- * Navigation model — the single source of truth for the sidebar and any
- * breadcrumb/command-palette built later. Adding a future page (a new agent
- * view, a Solana tool) is one entry here; the shell renders it automatically.
+ * Navigation model — the single source of truth for the sidebar.
+ * The institutional terminal's eight sections.
  */
 import type { LucideIcon } from "lucide-react";
 import {
-  Bot,
-  Boxes,
-  BrainCircuit,
+  Crosshair,
   LayoutDashboard,
-  LineChart,
-  MessagesSquare,
+  Radar,
   Settings,
-  TerminalSquare,
+  Wallet,
+  Waypoints,
+  Workflow,
+  FlaskConical,
 } from "lucide-react";
 
 export interface NavItem {
-  /** Route href under the (os) group. */
   href: string;
-  /** Sidebar label. */
   label: string;
-  /** Lucide icon component. */
   icon: LucideIcon;
-  /** One-line purpose, used for tooltips/aria. */
   description: string;
 }
 
 export const navItems: NavItem[] = [
-  {
-    href: "/dashboard",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    description: "System overview and live metrics",
-  },
-  {
-    href: "/chat",
-    label: "AI Chat",
-    icon: MessagesSquare,
-    description: "Converse with the AI operating system",
-  },
-  {
-    href: "/agents",
-    label: "Agents",
-    icon: Bot,
-    description: "The seven-agent roster and their status",
-  },
-  {
-    href: "/blockchain",
-    label: "Blockchain",
-    icon: Boxes,
-    description: "Live Solana chain data",
-  },
-  {
-    href: "/trading",
-    label: "Trading",
-    icon: LineChart,
-    description: "Market intelligence and paper trading",
-  },
-  {
-    href: "/memory",
-    label: "Memory",
-    icon: BrainCircuit,
-    description: "Long-term system memory and lessons",
-  },
-  {
-    href: "/terminal",
-    label: "Terminal",
-    icon: TerminalSquare,
-    description: "Live logs and command console",
-  },
-  {
-    href: "/settings",
-    label: "Settings",
-    icon: Settings,
-    description: "Configuration and preferences",
-  },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Live command center" },
+  { href: "/scanner", label: "Live Scanner", icon: Radar, description: "New launches, live" },
+  { href: "/sniper", label: "Launch Sniper", icon: Crosshair, description: "Scored auto-entries" },
+  { href: "/smart-money", label: "Smart Money", icon: Waypoints, description: "Wallet & flow activity" },
+  { href: "/portfolio", label: "Portfolio", icon: Wallet, description: "Positions, PnL, trades" },
+  { href: "/research", label: "Research", icon: FlaskConical, description: "Inspect & score any token" },
+  { href: "/automation", label: "Automation", icon: Workflow, description: "Bots & agent pipeline" },
+  { href: "/settings", label: "Settings", icon: Settings, description: "Config & providers" },
 ];

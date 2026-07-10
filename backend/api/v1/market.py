@@ -4,8 +4,11 @@ Thin routers per the architecture: all logic lives in modules/market.
 """
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
-from core.dependencies import HeliusDep, MarketManagerDep, PumpFunDep
+from core.dependencies import HeliusDep, MarketManagerDep, PumpFunDep, SolanaClientDep
+from core.exceptions import AppError
+from modules.bots.scoring import score_launch
 from modules.market.helius import TokenActivity
 from modules.market.market_models import (
     HistoryPoint,
@@ -25,6 +28,76 @@ async def token_activity(
     """Live flow for a token from Helius parsed transactions: buys vs
     sells, unique wallets, tx rate. Key-gated (HELIUS_API_KEY)."""
     return await helius.get_token_activity(mint, limit)
+
+
+class ScoreFactor(BaseModel):
+    name: str
+    points: float
+    max_points: float
+    detail: str
+
+
+class TokenScore(BaseModel):
+    """The AI Decision Card verdict — same engine the sniper uses."""
+
+    mint: str
+    score: float
+    approved: bool
+    factors: list[ScoreFactor]
+    rejects: list[str]
+    # Raw sub-signals surfaced for the card's individual meters.
+    buy_ratio_pct: float | None = None
+    unique_wallets: int | None = None
+    liquidity_usd: float | None = None
+    market_cap: float | None = None
+    mint_revoked: bool | None = None
+    freeze_revoked: bool | None = None
+
+
+@router.get("/score/{mint}", response_model=TokenScore)
+async def token_score(
+    mint: str, rpc: SolanaClientDep, helius: HeliusDep, manager: MarketManagerDep
+) -> TokenScore:
+    """Score any token 0-100 on measurable on-chain + flow signals (the
+    real confidence engine behind the AI Decision Card). Unmeasurable
+    signals count as unknown — never fabricated."""
+    buy_ratio = wallets = swaps = None
+    if helius.is_configured:
+        try:
+            act = await helius.get_token_activity(mint, limit=40)
+            buy_ratio, wallets, swaps = act.buy_ratio_pct, act.unique_wallets, act.swaps
+        except AppError:
+            pass
+
+    mint_revoked = freeze_revoked = None
+    try:
+        auth = await rpc.get_token_authorities(mint)
+        mint_revoked = auth.mint_authority is None
+        freeze_revoked = auth.freeze_authority is None
+    except AppError:
+        pass
+
+    mcap = liq = None
+    try:
+        info = await manager.get_token_info(mint)
+        mcap = info.market.market_cap
+        liq = info.market.liquidity_usd
+    except AppError:
+        pass
+
+    verdict = score_launch(
+        mcap_usd=mcap, age_s=None,
+        mint_revoked=mint_revoked, freeze_revoked=freeze_revoked,
+        buy_ratio_pct=buy_ratio, unique_wallets=wallets, swaps=swaps,
+        min_mcap_usd=0, max_mcap_usd=10**12, max_age_s=10**9,
+    )
+    return TokenScore(
+        mint=mint, score=verdict.score, approved=verdict.approved,
+        factors=[ScoreFactor(**f.__dict__) for f in verdict.factors],
+        rejects=verdict.rejects,
+        buy_ratio_pct=buy_ratio, unique_wallets=wallets, liquidity_usd=liq,
+        market_cap=mcap, mint_revoked=mint_revoked, freeze_revoked=freeze_revoked,
+    )
 
 
 @router.get("/pumpfun/new", response_model=list[PumpCoin])
