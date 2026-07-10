@@ -35,12 +35,34 @@ def _merge_runtime(summary: AgentSummary, runtime: AgentRuntimeDep) -> AgentSumm
     return summary
 
 
+def _summary_from_runtime(runtime: AgentRuntimeDep) -> list[AgentSummary]:
+    """Build the agent list from the live runtime alone — used when the vault
+    markdown isn't present (e.g. the Docker image ships without it)."""
+    return [
+        AgentSummary(
+            name=rt.name,
+            status="active" if rt.enabled else "paused",
+            description=rt.last_summary or "Live pipeline agent.",
+            runtime_state=rt.runtime_state,
+            last_run=rt.last_run,
+            last_summary=rt.last_summary,
+            last_ok=rt.last_ok,
+            cycles=rt.runs,
+        )
+        for rt in runtime.status().agents
+    ]
+
+
 @router.get("", response_model=list[AgentSummary])
 async def list_agents(
     agents: AgentsServiceDep, runtime: AgentRuntimeDep
 ) -> list[AgentSummary]:
-    """Every agent: vault status + live runtime state."""
-    return [_merge_runtime(s, runtime) for s in agents.list_agents()]
+    """Every agent: vault status + live runtime state. Falls back to the
+    live runtime when the vault markdown isn't available on this host."""
+    vault_agents = agents.list_agents()
+    if vault_agents:
+        return [_merge_runtime(s, runtime) for s in vault_agents]
+    return _summary_from_runtime(runtime)
 
 
 @router.get("/runtime", response_model=RuntimeStatus)
@@ -54,7 +76,19 @@ async def agent_detail(
     name: str, agents: AgentsServiceDep, runtime: AgentRuntimeDep
 ) -> AgentDetail:
     """One agent's full state: mission, rules, tasks, live runtime."""
-    detail = agents.get_agent(name)
+    try:
+        detail = agents.get_agent(name)
+    except NotFoundError:
+        # No vault markdown on this host — synthesize from the live runtime.
+        rt = runtime.agent_runtime(name)
+        if rt is None:
+            raise
+        detail = AgentDetail(
+            name=rt.name,
+            status="active" if rt.enabled else "paused",
+            description=rt.last_summary or "Live pipeline agent.",
+            mission="(vault notes not available on this server)",
+        )
     rt = runtime.agent_runtime(detail.name)
     if rt is not None:
         detail.runtime_state = rt.runtime_state
