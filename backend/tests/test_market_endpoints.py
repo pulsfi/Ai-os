@@ -6,8 +6,10 @@ from fastapi.testclient import TestClient
 
 from config import Settings
 from core.application import create_app
-from core.dependencies import get_market
+from core.dependencies import get_helius, get_market, get_solana_client
 from core.exceptions import ExternalServiceError
+from models.schemas.solana import TokenAuthorities
+from modules.market.helius import TokenActivity
 from modules.market.market_models import (
     HistoryPoint,
     MarketStatus,
@@ -96,3 +98,50 @@ def test_history_db_down_maps_to_error_envelope(settings: Settings) -> None:
 def test_status_endpoint(settings: Settings) -> None:
     body = make_client(settings).get("/api/v1/market/status").json()
     assert body["cache_hits"] == 3 and body["tracked_tokens"] == 2
+
+
+# --- /score/{mint} — the AI Decision Card engine -------------------------
+
+
+class FakeHelius:
+    """Configured Helius returning healthy buy-heavy flow."""
+
+    is_configured = True
+
+    async def get_token_activity(self, mint: str, limit: int = 40) -> TokenActivity:
+        return TokenActivity(
+            mint=mint, sampled_txs=40, swaps=30, buys=24, sells=6,
+            buy_ratio_pct=80.0, unique_wallets=18,
+        )
+
+
+class FakeRpc:
+    """Revoked mint + freeze authority (clean token)."""
+
+    async def get_token_authorities(self, mint: str) -> TokenAuthorities:
+        return TokenAuthorities(mint=mint, mint_authority=None, freeze_authority=None)
+
+
+def score_client(settings: Settings) -> TestClient:
+    app = create_app(settings)
+    app.dependency_overrides[get_market] = FakeManager
+    app.dependency_overrides[get_helius] = FakeHelius
+    app.dependency_overrides[get_solana_client] = FakeRpc
+    return TestClient(app)
+
+
+def test_score_endpoint_shape_and_signals(settings: Settings) -> None:
+    body = score_client(settings).get("/api/v1/market/score/MintA").json()
+    assert body["mint"] == "MintA"
+    assert 0 <= body["score"] <= 100
+    assert isinstance(body["factors"], list) and body["factors"]
+    # Raw sub-signals wired through from the flow + authority checks.
+    assert body["buy_ratio_pct"] == 80.0
+    assert body["unique_wallets"] == 18
+    assert body["mint_revoked"] is True and body["freeze_revoked"] is True
+
+
+def test_score_healthy_token_is_approved(settings: Settings) -> None:
+    body = score_client(settings).get("/api/v1/market/score/MintA").json()
+    # Buy-heavy flow, many wallets, revoked authorities => passes the gate.
+    assert body["approved"] is True and not body["rejects"]
