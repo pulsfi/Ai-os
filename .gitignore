@@ -26,3 +26,6 @@ desktop.ini
 # Bot fleet paper ledger (runtime data)
 backend/data/
 
+# Vault folders copied into the backend build context at deploy time
+backend/vault/
+

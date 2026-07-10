@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     ]
 
     # --- obsidian vault bridge (the knowledge layer) ---
-    vault_path: Path = Path("..")
+    vault_path: Path = Path(__file__).resolve().parents[2]
 
     model_config = SettingsConfigDict(
         env_file=".env",

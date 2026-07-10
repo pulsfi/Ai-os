@@ -73,19 +73,18 @@ async def test_coingecko_parses_known_mint() -> None:
     assert quote is not None and quote.price_usd == 80.5 and quote.market_cap == 4.7e10
 
 
-async def test_birdeye_skipped_without_key() -> None:
-    """Unconfigured Birdeye returns None without making any HTTP call."""
-    calls = 0
+async def test_birdeye_uses_public_endpoint_without_key() -> None:
+    """Birdeye is attempted even without a key so the market stack stays wired."""
 
     def handler(req: httpx.Request) -> httpx.Response:
-        nonlocal calls
-        calls += 1
-        return httpx.Response(200, json={})
+        assert req.url.path == "/defi/price"
+        assert "X-API-KEY" not in req.headers
+        return httpx.Response(200, json={"data": {"value": 1.23}})
 
     provider = BirdeyeProvider(http_with(handler), api_key="", min_interval_s=0)
-    assert provider.configured is False
-    assert await provider.get_quote("MintA") is None
-    assert calls == 0
+    assert provider.configured is True
+    quote = await provider.get_quote("MintA")
+    assert quote is not None and quote.price_usd == 1.23
 
 
 async def test_rate_guard_delays_rapid_calls() -> None:

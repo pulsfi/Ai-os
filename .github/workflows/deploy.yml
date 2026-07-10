@@ -25,6 +25,12 @@ jobs:
             git fetch origin
             git reset --hard origin/main
 
+            # Bundle the vault folders into the backend build context so the
+            # Agents + Memory pages have their markdown inside the image.
+            rm -rf backend/vault
+            mkdir -p backend/vault
+            cp -r "04 Agents" "10 Memory" "12 Daily Notes" "00 Dashboard" backend/vault/ 2>/dev/null || true
+
             cd backend
             docker compose up -d --build
 

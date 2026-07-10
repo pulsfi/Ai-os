@@ -11,7 +11,7 @@ from modules.market.providers import MarketProvider
 
 
 class BirdeyeProvider(MarketProvider):
-    """https://public-api.birdeye.so — set BIRDEYE_API_KEY to enable."""
+    """https://public-api.birdeye.so — works with an optional API key."""
 
     name = "birdeye"
 
@@ -21,16 +21,26 @@ class BirdeyeProvider(MarketProvider):
 
     @property
     def configured(self) -> bool:
-        return bool(self._api_key)
+        return True
 
     async def _fetch(self, mint: str) -> ProviderQuote | None:
+        headers = {"x-chain": "solana"}
+        if self._api_key:
+            headers["X-API-KEY"] = self._api_key
+
         res = await self._http.get(
             "https://public-api.birdeye.so/defi/price",
             params={"address": mint},
-            headers={"X-API-KEY": self._api_key, "x-chain": "solana"},
+            headers=headers,
         )
         res.raise_for_status()
-        value = (res.json().get("data") or {}).get("value")
+
+        payload = res.json() or {}
+        data = payload.get("data") or {}
+        if isinstance(data, dict):
+            value = data.get("value") or data.get("price")
+        else:
+            value = None
         if value is None:
             return None
         return ProviderQuote(provider=self.name, price_usd=float(value))

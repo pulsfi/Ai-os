@@ -20,6 +20,9 @@ services:
       # this is what makes trades happen on the server, not just locally.
       BOTS_AUTOSTART: "true"
       AGENTS_RUNTIME_ENABLED: "true"
+      # Vault folders are bundled into the image at /app/vault (see deploy),
+      # so the Agents + Memory pages find their markdown on the server.
+      VAULT_PATH: /app/vault
       # Ledgers + tuning on a named volume so a redeploy never wipes the
       # paper record (default paths are under /app/data).
       BOTS_DB_PATH: /app/data/paper_bots.db

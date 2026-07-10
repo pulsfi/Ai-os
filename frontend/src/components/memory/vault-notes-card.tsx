@@ -111,7 +111,12 @@ export function VaultNotesCard() {
           {/* note list */}
           <div className="space-y-1.5">
             {notes.isLoading && <Skeleton className="h-24 rounded-lg" />}
-            {notes.data?.length === 0 && (
+            {!notes.isLoading && notes.isError && (
+              <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+                The vault API is currently unavailable. Try again in a moment.
+              </p>
+            )}
+            {!notes.isLoading && !notes.isError && notes.data?.length === 0 && (
               <p className="text-xs text-muted-foreground">No notes in this folder.</p>
             )}
             {notes.data?.map((n) => (
@@ -138,8 +143,13 @@ export function VaultNotesCard() {
           {/* note content */}
           <div className="min-h-64 rounded-lg border">
             {note.isLoading && <Skeleton className="m-3 h-56 rounded" />}
-            {note.isError && (
+            {!note.isLoading && note.isError && (
               <p className="p-4 text-xs text-destructive">Could not load this note.</p>
+            )}
+            {!note.isLoading && !note.isError && !note.data && (
+              <p className="p-4 text-xs text-muted-foreground">
+                Select a note to view its contents here.
+              </p>
             )}
             {note.data && (
               <div className="flex h-full flex-col">
