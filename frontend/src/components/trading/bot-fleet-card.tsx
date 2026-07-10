@@ -29,7 +29,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -237,17 +236,19 @@ export function BotFleetCard() {
 const FIELDS: {
   key: keyof BotStatus["config"];
   label: string;
-  hint: string;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
 }[] = [
-  { key: "usd_per_trade", label: "Position size ($)", hint: "virtual USD per trade" },
-  { key: "max_open_positions", label: "Max positions", hint: "concurrent holds" },
-  { key: "take_profit_pct", label: "Take profit (%)", hint: "exit in profit at" },
-  { key: "stop_loss_pct", label: "Stop loss (%)", hint: "exit in loss at" },
-  { key: "trail_after_pct", label: "Trail after (%)", hint: "arm trailing at" },
-  { key: "trail_drop_pct", label: "Trail drop (%)", hint: "give-back from peak" },
-  { key: "exit_slippage_bps", label: "Exit slippage (bps)", hint: "100 = 1% haircut" },
-  { key: "max_gain_pct", label: "Max gain cap (%)", hint: "per-trade upside cap" },
-  { key: "reentry_cooldown_s", label: "Re-entry cooldown (s)", hint: "block re-buying a coin" },
+  { key: "usd_per_trade", label: "Position size", min: 1, max: 200, step: 1, unit: "$" },
+  { key: "max_open_positions", label: "Max positions", min: 1, max: 10, step: 1, unit: "" },
+  { key: "take_profit_pct", label: "Take profit", min: 1, max: 100, step: 1, unit: "%" },
+  { key: "stop_loss_pct", label: "Stop loss", min: 1, max: 50, step: 1, unit: "%" },
+  { key: "trail_after_pct", label: "Trail after", min: 1, max: 100, step: 1, unit: "%" },
+  { key: "trail_drop_pct", label: "Trail drop", min: 1, max: 50, step: 1, unit: "%" },
+  { key: "exit_slippage_bps", label: "Exit slippage", min: 0, max: 1000, step: 5, unit: "bps" },
+  { key: "reentry_cooldown_s", label: "Re-entry cooldown", min: 0, max: 3600, step: 30, unit: "s" },
 ];
 
 function BotConfigSheet({ bot, onClose }: { bot: BotStatus | null; onClose: () => void }) {
@@ -269,19 +270,17 @@ function BotConfigSheet({ bot, onClose }: { bot: BotStatus | null; onClose: () =
 
 function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }) {
   const update = useUpdateBotConfig();
-  const [values, setValues] = React.useState<Record<string, string>>(() =>
-    Object.fromEntries(FIELDS.map((f) => [f.key, String(bot.config[f.key] ?? "")])),
+  const [values, setValues] = React.useState<Record<string, number>>(() =>
+    Object.fromEntries(FIELDS.map((f) => [f.key, Number(bot.config[f.key] ?? f.min)])),
   );
+  const [oneShot, setOneShot] = React.useState<boolean>(bot.config.one_shot_per_mint);
 
   function save() {
-    const payload: Record<string, number> = {};
+    const payload: Record<string, number | boolean> = {};
     for (const f of FIELDS) {
-      const raw = values[f.key];
-      const n = Number(raw);
-      if (raw !== "" && !Number.isNaN(n) && n !== bot.config[f.key]) {
-        payload[f.key] = n;
-      }
+      if (values[f.key] !== bot.config[f.key]) payload[f.key] = values[f.key];
     }
+    if (oneShot !== bot.config.one_shot_per_mint) payload.one_shot_per_mint = oneShot;
     if (Object.keys(payload).length === 0) {
       toast.info("No changes to save");
       return;
@@ -300,22 +299,58 @@ function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }
   }
 
   return (
-    <div className="space-y-4 px-4 py-4">
+    <div className="space-y-5 px-4 py-4">
       {FIELDS.map((f) => (
-        <div key={f.key} className="space-y-1">
+        <div key={f.key} className="space-y-1.5">
           <label className="flex items-baseline justify-between text-xs">
             <span className="font-medium">{f.label}</span>
-            <span className="text-muted-foreground">{f.hint}</span>
+            <span className="font-mono text-primary">
+              {f.unit === "$" && "$"}
+              {values[f.key]}
+              {f.unit !== "$" && f.unit ? ` ${f.unit}` : ""}
+            </span>
           </label>
-          <Input
-            type="number"
-            inputMode="decimal"
-            value={values[f.key] ?? ""}
-            onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-            className="font-mono"
+          <input
+            type="range"
+            min={f.min}
+            max={f.max}
+            step={f.step}
+            value={values[f.key]}
+            onChange={(e) =>
+              setValues((v) => ({ ...v, [f.key]: Number(e.target.value) }))
+            }
+            className="w-full accent-primary"
           />
         </div>
       ))}
+
+      {/* one trade per coin — the anti-repeat-loss control */}
+      <button
+        type="button"
+        onClick={() => setOneShot((s) => !s)}
+        className="flex w-full items-center justify-between rounded-lg border p-3 text-left text-xs"
+      >
+        <span>
+          <span className="font-medium">One trade per coin</span>
+          <span className="block text-muted-foreground">
+            never re-enter a coin — avoids repeat losses on one launch
+          </span>
+        </span>
+        <span
+          className={cn(
+            "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+            oneShot ? "bg-primary" : "bg-muted",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 size-4 rounded-full bg-white transition-transform",
+              oneShot ? "translate-x-4" : "translate-x-0.5",
+            )}
+          />
+        </span>
+      </button>
+
       <Button className="w-full" disabled={update.isPending} onClick={save}>
         {update.isPending ? "Saving…" : "Save changes"}
       </Button>

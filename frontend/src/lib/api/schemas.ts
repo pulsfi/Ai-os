@@ -301,6 +301,7 @@ export const botConfigSchema = z.object({
   exit_slippage_bps: z.number(),
   max_gain_pct: z.number(),
   reentry_cooldown_s: z.number(),
+  one_shot_per_mint: z.boolean(),
 });
 
 export const botStatusSchema = z.object({

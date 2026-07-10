@@ -42,6 +42,9 @@ class BotConfig(BaseModel):
     # Seconds to block re-buying a coin after exiting it (anti-churn: you
     # buy a launch once, not repeatedly on every tick).
     reentry_cooldown_s: float = Field(default=600.0, ge=0)
+    # One shot per coin: once traded, NEVER re-enter that mint (there's an
+    # ocean of other coins). On for launch bots; off for liquid majors.
+    one_shot_per_mint: bool = False
 
 
 class BotConfigUpdate(BaseModel):
@@ -60,6 +63,7 @@ class BotConfigUpdate(BaseModel):
     exit_slippage_bps: int | None = Field(default=None, ge=0, le=1000)
     max_gain_pct: float | None = Field(default=None, gt=0, le=100000)
     reentry_cooldown_s: float | None = Field(default=None, ge=0, le=86400)
+    one_shot_per_mint: bool | None = None
 
 
 class BotStatus(BaseModel):

@@ -288,6 +288,7 @@ export function useUpdateBotConfig() {
         exit_slippage_bps: number;
         max_gain_pct: number;
         reentry_cooldown_s: number;
+        one_shot_per_mint: boolean;
       }>;
     }) => botsService.updateConfig(botId, update),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.bots }),

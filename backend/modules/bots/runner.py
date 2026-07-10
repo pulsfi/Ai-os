@@ -52,6 +52,11 @@ class BotRunner:
         # mint -> monotonic time until which re-entry is blocked (stops the
         # bot from re-buying the same coin over and over after each exit).
         self._cooldown: dict[str, float] = {}
+        # One-shot: mints this bot has EVER traded (never re-enter them).
+        # Seeded from the ledger so a restart doesn't forget.
+        self._seen_mints: set[str] = (
+            ledger.traded_mints(config.id) if config.one_shot_per_mint else set()
+        )
         # Serializes scheduled ticks with event-driven request_tick calls.
         self._tick_lock = asyncio.Lock()
 
@@ -213,10 +218,11 @@ class BotRunner:
         slots = self.config.max_open_positions - len(open_trades)
         if slots <= 0:
             return
-        # Exclude both currently-held mints and mints still in cooldown.
+        # Exclude held mints, mints in cooldown, and (one-shot) any mint
+        # ever traded — one chance per coin, then on to the next.
         now = time.monotonic()
         self._cooldown = {m: exp for m, exp in self._cooldown.items() if exp > now}
-        blocked = {t.mint for t in open_trades} | set(self._cooldown)
+        blocked = {t.mint for t in open_trades} | set(self._cooldown) | self._seen_mints
         for signal in await self._strategy.find_entries(blocked, slots):
             trade_id = self._ledger.open_trade(
                 bot_id=self.config.id,
@@ -226,6 +232,8 @@ class BotRunner:
                 entry_price=signal.price_usd,
                 entry_note=signal.note,
             )
+            if self.config.one_shot_per_mint:
+                self._seen_mints.add(signal.mint)
             self._last_price[trade_id] = signal.price_usd
             self._peak_price[trade_id] = signal.price_usd
             logger.info(

@@ -66,7 +66,8 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             # you can't actually dump a new launch at +300%.
             exit_slippage_bps=300,
             max_gain_pct=60.0,
-            reentry_cooldown_s=900.0,  # don't re-snipe the same launch for 15m
+            reentry_cooldown_s=900.0,
+            one_shot_per_mint=True,  # one snipe per launch — never chase it again
         ),
         BotConfig(
             id="graduate",
@@ -83,7 +84,8 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             trail_drop_pct=5.0,
             exit_slippage_bps=150,  # graduating coins: ~1.5% haircut
             max_gain_pct=100.0,
-            reentry_cooldown_s=1800.0,  # a coin graduates once; 30m cooldown
+            reentry_cooldown_s=1800.0,
+            one_shot_per_mint=True,  # a coin graduates once
         ),
         BotConfig(
             id="trend",
