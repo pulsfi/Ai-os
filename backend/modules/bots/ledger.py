@@ -163,6 +163,15 @@ class BotLedger:
             ).fetchall()
         return {r["mint"] for r in rows}
 
+    def traded_symbols(self, bot_id: str) -> set[str]:
+        """Every symbol (lowercased) this bot has traded — blocks copycat
+        relaunches that reuse a name with a fresh mint."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT symbol FROM bot_trades WHERE bot_id = ?", (bot_id,)
+            ).fetchall()
+        return {(r["symbol"] or "").strip().lower() for r in rows if r["symbol"]}
+
     def stats(self, bot_id: str) -> dict[str, float | int | None]:
         """open count, closed count, realized PnL, win rate for one bot."""
         with self._connect() as conn:

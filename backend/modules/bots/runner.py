@@ -52,11 +52,14 @@ class BotRunner:
         # mint -> monotonic time until which re-entry is blocked (stops the
         # bot from re-buying the same coin over and over after each exit).
         self._cooldown: dict[str, float] = {}
-        # One-shot: mints this bot has EVER traded (never re-enter them).
-        # Seeded from the ledger so a restart doesn't forget.
-        self._seen_mints: set[str] = (
-            ledger.traded_mints(config.id) if config.one_shot_per_mint else set()
-        )
+        # One-shot: mints AND names this bot has EVER traded (never re-enter).
+        # Blocking the name too stops copycat relaunches (same "ANIF" name,
+        # fresh mint). Seeded from the ledger so a restart doesn't forget.
+        self._seen_mints: set[str] = set()
+        self._seen_symbols: set[str] = set()
+        if config.one_shot_per_mint:
+            self._seen_mints = ledger.traded_mints(config.id)
+            self._seen_symbols = ledger.traded_symbols(config.id)
         # Serializes scheduled ticks with event-driven request_tick calls.
         self._tick_lock = asyncio.Lock()
 
@@ -223,7 +226,14 @@ class BotRunner:
         now = time.monotonic()
         self._cooldown = {m: exp for m, exp in self._cooldown.items() if exp > now}
         blocked = {t.mint for t in open_trades} | set(self._cooldown) | self._seen_mints
+        held_symbols = {t.symbol.strip().lower() for t in open_trades}
         for signal in await self._strategy.find_entries(blocked, slots):
+            sym = signal.symbol.strip().lower()
+            # Skip names already traded (copycat relaunch) or held right now.
+            if self.config.one_shot_per_mint and sym in self._seen_symbols:
+                continue
+            if sym and sym in held_symbols:
+                continue
             trade_id = self._ledger.open_trade(
                 bot_id=self.config.id,
                 mint=signal.mint,
@@ -232,8 +242,10 @@ class BotRunner:
                 entry_price=signal.price_usd,
                 entry_note=signal.note,
             )
+            held_symbols.add(sym)
             if self.config.one_shot_per_mint:
                 self._seen_mints.add(signal.mint)
+                self._seen_symbols.add(sym)
             self._last_price[trade_id] = signal.price_usd
             self._peak_price[trade_id] = signal.price_usd
             logger.info(
