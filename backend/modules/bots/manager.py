@@ -30,6 +30,7 @@ from models.schemas.bots import (
 from modules.bots.ledger import BotLedger
 from modules.bots.runner import BotRunner
 from modules.bots.strategies import (
+    FlowScalper,
     GraduationMomentum,
     NewLaunchSniper,
     TrendScalper,
@@ -107,6 +108,25 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             max_gain_pct=100000.0,  # no cap needed on liquid real prices
             reentry_cooldown_s=120.0,  # scalper can re-trade a liquid token sooner
         ),
+        BotConfig(
+            id="flowscalp",
+            name="Flow Scalper",
+            strategy="flow_scalper",
+            description="Scalps liquid tokens only when live buy-pressure is "
+            "confirmed (Helius flow) — disciplined, small quick wins",
+            interval_s=max(settings.bots_interval_seconds, 25.0),
+            usd_per_trade=usd,
+            max_open_positions=2,
+            take_profit_pct=2.5,
+            stop_loss_pct=1.5,
+            max_hold_s=2 * 60 * 60,
+            trail_after_pct=1.5,
+            trail_drop_pct=0.8,
+            exit_slippage_bps=25,  # liquid, real fills
+            max_gain_pct=100000.0,
+            reentry_cooldown_s=90.0,
+            one_shot_per_mint=False,  # liquid majors are re-tradeable
+        ),
     ]
 
 
@@ -129,6 +149,7 @@ class BotManager:
             ),
             "graduation_momentum": GraduationMomentum(pumpfun, market),
             "trend_scalper": TrendScalper(pumpfun, market),
+            "flow_scalper": FlowScalper(pumpfun, market, helius),
         }
         self._overrides_path = Path(settings.bots_overrides_path)
         self._overrides = self._load_overrides()

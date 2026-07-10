@@ -184,6 +184,50 @@ def activity(buys: int, sells: int, wallets: int) -> TokenActivity:
     )
 
 
+class _WatchMarket:
+    """Watchlist with one up-token and one down-token."""
+
+    async def get_watchlist(self):
+        from datetime import datetime, timezone
+
+        from modules.market.market_models import TokenMarketData
+
+        def tok(mint, change):
+            return TokenMarketData(
+                mint=mint, symbol=mint[:4].upper(), price_usd=1.0, change_24h=change,
+                volume_24h=None, liquidity_usd=None, market_cap=None, fdv=None,
+                sources=["dexscreener"], fetched_at=datetime.now(timezone.utc),
+            )
+
+        return [tok("UpMint", 5.0), tok("DownMint", -4.0)]
+
+    async def get_trending(self):
+        return await self.get_watchlist()
+
+
+async def test_flow_scalper_enters_only_confirmed_uptrend() -> None:
+    from modules.bots.strategies import FlowScalper
+
+    scalp = FlowScalper(
+        StubPumpFun([]), market=_WatchMarket(),  # type: ignore[arg-type]
+        helius=StubHelius(activity(buys=8, sells=2, wallets=6)),
+    )
+    signals = await scalp.find_entries(set(), 5)
+    # Only the up-token with confirmed buy pressure; the down-token is skipped.
+    assert [s.mint for s in signals] == ["UpMint"]
+    assert "buys" in signals[0].note
+
+
+async def test_flow_scalper_skips_weak_flow() -> None:
+    from modules.bots.strategies import FlowScalper
+
+    scalp = FlowScalper(
+        StubPumpFun([]), market=_WatchMarket(),  # type: ignore[arg-type]
+        helius=StubHelius(activity(buys=3, sells=7, wallets=6)),  # net selling
+    )
+    assert await scalp.find_entries(set(), 5) == []
+
+
 def fresh_launch_sniper(helius: object) -> NewLaunchSniper:
     coins = [pump_coin("Fresh1", 10_000)]
     return NewLaunchSniper(StubPumpFun(coins), market=None, helius=helius)  # type: ignore[arg-type]

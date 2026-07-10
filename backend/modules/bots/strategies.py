@@ -355,3 +355,90 @@ class TrendScalper(Strategy):
             if t.mint == mint:
                 return t.price_usd
         return None
+
+
+class FlowScalper(Strategy):
+    """Disciplined scalper: only buys liquid watchlist tokens that show
+    CONFIRMED real buy-pressure right now (Helius flow), rather than chasing
+    24h charts or lottery-ticket launches.
+
+    Why this is structurally lower-loss than the sniper:
+      * liquid tokens → real fills, ~0 slippage (25 bps), no mcap proxy;
+      * enters only when live flow shows more buyers than sellers across
+        several wallets → riding demand, not hoping for it;
+      * small quick targets with a tight stop → many small wins, capped
+        downside. (Still: only the paper record proves it profits.)
+    """
+
+    name = "flow_scalper"
+
+    def __init__(
+        self,
+        pumpfun: PumpFunClient,
+        market: MarketManager,
+        helius: HeliusClient | None = None,
+        min_buy_ratio_pct: float = 58.0,
+        min_wallets: int = 5,
+        min_swaps: int = 6,
+    ) -> None:
+        super().__init__(pumpfun, market)
+        self._helius = helius
+        self._min_buy_ratio = min_buy_ratio_pct
+        self._min_wallets = min_wallets
+        self._min_swaps = min_swaps
+
+    async def find_entries(self, held_mints: set[str], slots: int) -> list[EntrySignal]:
+        tokens = await self._market.get_watchlist()
+        signals: list[EntrySignal] = []
+        for t in tokens:
+            if len(signals) >= slots:
+                break
+            # Not up on the day? skip — scalp with the short-term tide, not against it.
+            if (
+                t.mint in held_mints
+                or t.price_usd is None
+                or t.change_24h is None
+                or t.change_24h < 0
+            ):
+                continue
+            flow = await self._flow(t.mint)
+            if flow is None:
+                continue  # no confirmed buying right now
+            signals.append(
+                EntrySignal(
+                    mint=t.mint,
+                    symbol=t.symbol or t.mint[:6],
+                    price_usd=t.price_usd,
+                    note=f"flow-scalp {flow}",
+                )
+            )
+        return signals
+
+    async def _flow(self, mint: str) -> str | None:
+        """Confirmed buy-pressure note, or None to skip."""
+        if self._helius is None or not self._helius.is_configured:
+            # No key: fall back to letting it trade (basic uptrend filter
+            # already applied), stated honestly.
+            return "flow gate off (no HELIUS_API_KEY)"
+        try:
+            act = await self._helius.get_token_activity(mint, limit=40)
+        except AppError:
+            return None
+        if (
+            act.swaps < self._min_swaps
+            or act.unique_wallets < self._min_wallets
+            or act.buy_ratio_pct is None
+            or act.buy_ratio_pct < self._min_buy_ratio
+        ):
+            return None
+        return f"{act.buy_ratio_pct}% buys, {act.unique_wallets} wallets"
+
+    async def current_price(self, mint: str) -> float | None:
+        try:
+            tokens = await self._market.get_watchlist()
+        except AppError:
+            return None
+        for t in tokens:
+            if t.mint == mint:
+                return t.price_usd
+        return None
