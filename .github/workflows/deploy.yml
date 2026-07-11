@@ -63,6 +63,23 @@ jobs:
               fi
             fi
 
+            # API keys managed as GitHub repo secrets: update a key in
+            # Settings -> Secrets and variables -> Actions, push anything,
+            # and it lands here — no SSH editing of .env (which kept going
+            # wrong). An unset/empty secret leaves .env untouched.
+            [ -f .env ] || touch .env
+            upsert_env() {
+              [ -z "$2" ] && return 0
+              grep -v "^$1=" .env > .env.new || true
+              printf '%s=%s\n' "$1" "$2" >> .env.new
+              mv -f .env.new .env
+              echo "applied $1 from GitHub secret"
+            }
+            upsert_env HELIUS_API_KEY "${{ secrets.HELIUS_API_KEY }}"
+            upsert_env BIRDEYE_API_KEY "${{ secrets.BIRDEYE_API_KEY }}"
+            upsert_env ANTHROPIC_API_KEY "${{ secrets.ANTHROPIC_API_KEY }}"
+            upsert_env TELEGRAM_BOT_TOKEN "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+
             docker compose up -d --build
 
             cd ../frontend
