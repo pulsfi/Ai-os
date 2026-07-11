@@ -41,17 +41,26 @@ jobs:
             # Heal .env: docker compose rejects the WHOLE file if one line is
             # malformed (e.g. a space in a key name). Comment such lines out
             # so the deploy proceeds, and print a masked hint (never values).
+            # NB: .env may be root-owned (edited with sudo), so never write
+            # into it directly — build a healed copy and mv it into place
+            # (a rename only needs directory permission, not file permission).
             if [ -f .env ]; then
-              cp .env .env.bak
+              cp -f .env .env.bak
               awk '{
                 if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/ || $0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/) print $0;
                 else print "# DISABLED (bad syntax - fix and re-add): " substr($0, 1, 12) "...";
-              }' .env.bak > .env
-              if ! cmp -s .env .env.bak; then
+              }' .env.bak > .env.healed
+              if cmp -s .env.healed .env; then
+                rm -f .env.healed
+              else
                 echo "WARNING: malformed line(s) in backend/.env were disabled:"
-                grep -n "^# DISABLED" .env || true
+                grep -n "^# DISABLED" .env.healed || true
+                mv -f .env.healed .env || {
+                  echo "ERROR: cannot replace backend/.env (root-owned?)."
+                  echo "Fix on the VPS:  sudo chown $(whoami) backend/.env"
+                  exit 1
+                }
               fi
-              rm .env.bak
             fi
 
             docker compose up -d --build
