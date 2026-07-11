@@ -191,6 +191,11 @@ class _OkRpc:
 
         return TokenAuthorities(mint_authority=None, freeze_authority=None)
 
+    async def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        from tests.test_bots import healthy_holders
+
+        return healthy_holders()
+
 
 async def test_sniper_prefers_stream_and_watches_entries() -> None:
     # 100 SOL mcap * $200 = $20,000 -> inside the band. Confirmation entry:

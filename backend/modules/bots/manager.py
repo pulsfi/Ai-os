@@ -11,21 +11,25 @@ start/stop/restart here are REAL state changes on asyncio tasks — this is
 the runtime the /agents endpoints were honestly missing.
 """
 
+import json
 import logging
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from config import Settings
 from core.exceptions import NotFoundError
-import json
 
 from models.schemas.bots import (
     BotConfig,
     BotConfigUpdate,
     BotControlResult,
+    BotInsights,
     BotPerformance,
     BotStatus,
     BotTrade,
     EquityPoint,
+    FactorInsight,
 )
 from modules.bots.ledger import BotLedger
 from modules.bots.runner import BotRunner
@@ -65,6 +69,7 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             max_hold_s=15 * 60,
             trail_after_pct=15.0,  # up 15%? protect it:
             trail_drop_pct=8.0,  # give back 8% from peak -> out (let winners run less far back)
+            break_even_at_pct=10.0,  # once +10%, never let it become a -18% loss
             # Fresh launches are thin: a real exit is much worse than the
             # marked mcap. 3% haircut + a modest cap keeps paper honest —
             # you can't actually dump a new launch at +300%.
@@ -86,6 +91,7 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             max_hold_s=60 * 60,
             trail_after_pct=8.0,
             trail_drop_pct=5.0,
+            break_even_at_pct=6.0,
             exit_slippage_bps=150,  # graduating coins: ~1.5% haircut
             max_gain_pct=100.0,
             reentry_cooldown_s=1800.0,
@@ -269,21 +275,37 @@ class BotManager:
         specs = [("fleet", "Whole fleet", None)] + [
             (r.config.id, r.config.name, r.config.id) for r in self._runners.values()
         ]
+        today = datetime.now(timezone.utc).date().isoformat()
         for perf_id, name, ledger_id in specs:
             closed = self._ledger.closed_trades_chrono(ledger_id)
             equity = 0.0
+            peak = 0.0
+            max_dd = 0.0
+            gross_win = gross_loss = 0.0
+            today_pnl = 0.0
             curve: list[EquityPoint] = []
             pcts: list[float] = []
+            win_pcts: list[float] = []
+            loss_pcts: list[float] = []
             wins = 0
             for t in closed:
-                equity += t.pnl_usd or 0.0
+                pnl = t.pnl_usd or 0.0
+                equity += pnl
+                peak = max(peak, equity)
+                max_dd = max(max_dd, peak - equity)
+                if pnl > 0:
+                    wins += 1
+                    gross_win += pnl
+                else:
+                    gross_loss += -pnl
+                if (t.exit_ts or "").startswith(today):
+                    today_pnl += pnl
                 curve.append(
                     EquityPoint(ts=t.exit_ts or t.entry_ts, equity_usd=round(equity, 4))
                 )
                 if t.pnl_pct is not None:
                     pcts.append(t.pnl_pct)
-                if (t.pnl_usd or 0.0) > 0:
-                    wins += 1
+                    (win_pcts if t.pnl_pct > 0 else loss_pcts).append(t.pnl_pct)
             n = len(closed)
             results.append(
                 BotPerformance(
@@ -297,10 +319,58 @@ class BotManager:
                     avg_pnl_pct=round(sum(pcts) / len(pcts), 2) if pcts else None,
                     best_trade_pct=max(pcts) if pcts else None,
                     worst_trade_pct=min(pcts) if pcts else None,
+                    # Undefined with no losses yet (infinite) — shown as None.
+                    profit_factor=round(gross_win / gross_loss, 2) if gross_loss > 0 else None,
+                    expectancy_usd=round(equity / n, 2) if n else None,
+                    avg_win_pct=round(sum(win_pcts) / len(win_pcts), 2) if win_pcts else None,
+                    avg_loss_pct=round(sum(loss_pcts) / len(loss_pcts), 2) if loss_pcts else None,
+                    max_drawdown_usd=round(max_dd, 2) if n else None,
+                    today_pnl_usd=round(today_pnl, 2),
                     curve=curve,
                 )
             )
         return results
+
+    _FACTOR_RE = re.compile(r"([a-z_]+) ([0-9.]+)/([0-9.]+)")
+
+    def insights(self, bot_id: str = "sniper", limit: int = 400) -> BotInsights:
+        """Factor-level win/loss analysis parsed from real trade notes.
+
+        Shows which scoring factors actually separated winners from losers —
+        the evidence base for reviewing weights. Deliberately NOT applied
+        automatically: silently self-tuning weights on a small live sample
+        overfits noise and hides the decision from the operator."""
+        closed = [
+            t for t in self._ledger.trades(bot_id, limit)
+            if t.status == "closed" and t.entry_note and "[" in t.entry_note
+        ]
+        buckets: dict[str, dict[str, list[float]]] = {}
+        wins = losses = 0
+        for t in closed:
+            won = (t.pnl_usd or 0.0) > 0
+            wins += won
+            losses += not won
+            section = t.entry_note[t.entry_note.index("[") + 1:]
+            for name, pts, _mx in self._FACTOR_RE.findall(section):
+                buckets.setdefault(name, {"w": [], "l": []})["w" if won else "l"].append(
+                    float(pts)
+                )
+        factors = []
+        for name, b in sorted(buckets.items()):
+            w_avg = round(sum(b["w"]) / len(b["w"]), 1) if b["w"] else None
+            l_avg = round(sum(b["l"]) / len(b["l"]), 1) if b["l"] else None
+            factors.append(FactorInsight(
+                name=name, winners_avg=w_avg, losers_avg=l_avg,
+                edge=round(w_avg - l_avg, 1) if w_avg is not None and l_avg is not None else None,
+            ))
+        return BotInsights(
+            bot_id=bot_id, closed_analyzed=len(closed), wins=wins, losses=losses,
+            factors=factors,
+            note=(
+                "Positive edge = the factor scored higher on winners. Small-sample "
+                "correlation: use to review weights manually, not to auto-tune."
+            ),
+        )
 
 
 _manager: BotManager | None = None

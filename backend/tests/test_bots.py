@@ -136,11 +136,19 @@ class _GoodHelius:
         )
 
 
+def healthy_holders() -> list[dict]:
+    """Bonding curve holds ~79%, then small real holders (top5 ≈ 5%)."""
+    return [{"uiAmount": 793_000_000.0}] + [{"uiAmount": 10_000_000.0}] * 8
+
+
 class _OkRpc:
     async def get_token_authorities(self, mint: str):
         from models.schemas.solana import TokenAuthorities
 
         return TokenAuthorities(mint_authority=None, freeze_authority=None)
+
+    async def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        return healthy_holders()
 
 
 class FlowStubStream:

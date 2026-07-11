@@ -57,6 +57,25 @@ function ResetButton() {
   );
 }
 
+function MetricTile({
+  label, value, tone, hint,
+}: { label: string; value: string; tone?: "up" | "down"; hint?: string }) {
+  return (
+    <div className="rounded-lg border bg-muted/30 px-2.5 py-2" title={hint}>
+      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "font-mono text-sm tabular-nums",
+          value !== "—" && tone === "up" && "text-emerald-400",
+          value !== "—" && tone === "down" && "text-red-400",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 const W = 720;
 const H = 160;
 const PAD = 8;
@@ -173,6 +192,55 @@ export function PerformanceCard() {
               ))}
             </div>
 
+            {/* The numbers that decide long-term viability — win rate alone lies */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              <MetricTile
+                label="Profit factor"
+                value={current.profit_factor == null ? "—" : current.profit_factor.toFixed(2)}
+                tone={
+                  current.profit_factor == null ? undefined
+                    : current.profit_factor >= 1.3 ? "up"
+                    : current.profit_factor < 1 ? "down" : undefined
+                }
+                hint="gross wins ÷ gross losses (>1.3 healthy)"
+              />
+              <MetricTile
+                label="Expectancy"
+                value={current.expectancy_usd == null ? "—" : `$${current.expectancy_usd.toFixed(2)}`}
+                tone={
+                  current.expectancy_usd == null ? undefined
+                    : current.expectancy_usd > 0 ? "up" : "down"
+                }
+                hint="avg PnL per trade"
+              />
+              <MetricTile
+                label="Avg win"
+                value={formatPct(current.avg_win_pct ?? null)}
+                tone="up"
+              />
+              <MetricTile
+                label="Avg loss"
+                value={formatPct(current.avg_loss_pct ?? null)}
+                tone="down"
+              />
+              <MetricTile
+                label="Max drawdown"
+                value={current.max_drawdown_usd == null ? "—" : `$${current.max_drawdown_usd.toFixed(2)}`}
+                hint="worst peak-to-trough"
+              />
+              <MetricTile
+                label="Today"
+                value={
+                  current.today_pnl_usd == null ? "—"
+                    : `${current.today_pnl_usd >= 0 ? "+" : ""}$${current.today_pnl_usd.toFixed(2)}`
+                }
+                tone={
+                  current.today_pnl_usd == null ? undefined
+                    : current.today_pnl_usd >= 0 ? "up" : "down"
+                }
+              />
+            </div>
+
             <EquityCurve perf={current} />
 
             <div className="overflow-x-auto">
@@ -183,6 +251,8 @@ export function PerformanceCard() {
                     <th className="py-2 pr-3 text-right font-medium">Closed</th>
                     <th className="py-2 pr-3 text-right font-medium">W / L</th>
                     <th className="py-2 pr-3 text-right font-medium">Win rate</th>
+                    <th className="py-2 pr-3 text-right font-medium">PF</th>
+                    <th className="py-2 pr-3 text-right font-medium">Expectancy</th>
                     <th className="py-2 pr-3 text-right font-medium">Realized PnL</th>
                     <th className="py-2 pr-3 text-right font-medium">Avg trade</th>
                     <th className="py-2 text-right font-medium">Best / Worst</th>
@@ -205,6 +275,24 @@ export function PerformanceCard() {
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {p.win_rate_pct === null ? "—" : `${p.win_rate_pct}%`}
+                      </td>
+                      <td
+                        className={cn(
+                          "py-2 pr-3 text-right font-mono",
+                          p.profit_factor != null && p.profit_factor >= 1 && "text-emerald-400",
+                          p.profit_factor != null && p.profit_factor < 1 && "text-red-400",
+                        )}
+                      >
+                        {p.profit_factor == null ? "—" : p.profit_factor.toFixed(2)}
+                      </td>
+                      <td
+                        className={cn(
+                          "py-2 pr-3 text-right font-mono",
+                          p.expectancy_usd != null && p.expectancy_usd > 0 && "text-emerald-400",
+                          p.expectancy_usd != null && p.expectancy_usd < 0 && "text-red-400",
+                        )}
+                      >
+                        {p.expectancy_usd == null ? "—" : `$${p.expectancy_usd.toFixed(2)}`}
                       </td>
                       <td
                         className={cn(

@@ -14,6 +14,7 @@ from core.dependencies import BotManagerDep
 from models.schemas.bots import (
     BotConfigUpdate,
     BotControlResult,
+    BotInsights,
     BotPerformance,
     BotStatus,
     BotTrade,
@@ -53,6 +54,15 @@ async def performance(bots: BotManagerDep) -> list[BotPerformance]:
     PnL, win rate, avg/best/worst trade. The evidence the Stage 5 gate
     will be judged on."""
     return bots.performance()
+
+
+@router.get("/insights", response_model=BotInsights)
+async def insights(
+    bots: BotManagerDep, bot_id: str = Query(default="sniper")
+) -> BotInsights:
+    """Which scoring factors separated winners from losers (parsed from real
+    trade notes). Evidence for reviewing weights — never auto-applied."""
+    return bots.insights(bot_id)
 
 
 @router.get("/trades", response_model=list[BotTrade])

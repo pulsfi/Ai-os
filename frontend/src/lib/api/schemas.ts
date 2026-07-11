@@ -298,6 +298,7 @@ export const botConfigSchema = z.object({
   max_hold_s: z.number(),
   trail_after_pct: z.number().nullable(),
   trail_drop_pct: z.number().nullable(),
+  break_even_at_pct: z.number().nullable().optional(),
   exit_slippage_bps: z.number(),
   max_gain_pct: z.number(),
   reentry_cooldown_s: z.number(),
@@ -315,6 +316,8 @@ export const botStatusSchema = z.object({
   closed_trades: z.number(),
   realized_pnl_usd: z.number(),
   win_rate_pct: z.number().nullable(),
+  // Expectancy-guard pause reason (None = trading normally).
+  risk_note: z.string().nullable().optional(),
 });
 
 export type BotStatus = z.infer<typeof botStatusSchema>;
@@ -365,6 +368,13 @@ export const botPerformanceSchema = z.object({
   avg_pnl_pct: z.number().nullable(),
   best_trade_pct: z.number().nullable(),
   worst_trade_pct: z.number().nullable(),
+  // Long-term viability metrics (win rate alone lies):
+  profit_factor: z.number().nullable().optional(),
+  expectancy_usd: z.number().nullable().optional(),
+  avg_win_pct: z.number().nullable().optional(),
+  avg_loss_pct: z.number().nullable().optional(),
+  max_drawdown_usd: z.number().nullable().optional(),
+  today_pnl_usd: z.number().optional(),
   curve: z.array(equityPointSchema),
 });
 

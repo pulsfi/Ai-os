@@ -60,8 +60,65 @@ class BotRunner:
         if config.one_shot_per_mint:
             self._seen_mints = ledger.traded_mints(config.id)
             self._seen_symbols = ledger.traded_symbols(config.id)
+        # Expectancy guard: entries pause when the recent record is bleeding.
+        self._risk_off_until = 0.0
+        self._risk_note: str | None = None
         # Serializes scheduled ticks with event-driven request_tick calls.
         self._tick_lock = asyncio.Lock()
+
+    # -- risk management -------------------------------------------------------
+
+    GUARD_WINDOW = 20  # trades examined
+    GUARD_MIN_TRADES = 12  # don't judge tiny samples
+    GUARD_MIN_PF = 0.75  # profit factor below this = negative expectancy
+    GUARD_PAUSE_S = 1800.0  # 30 min risk-off
+
+    def _expectancy_guard(self) -> str | None:
+        """Auto risk-off: if the last GUARD_WINDOW closed trades have a
+        profit factor under GUARD_MIN_PF, pause NEW entries (exits keep
+        managing). A strategy that is measurably bleeding must stop digging,
+        not trade faster. Returns the active pause reason or None."""
+        now = time.monotonic()
+        if now < self._risk_off_until:
+            return self._risk_note
+        closed = [
+            t for t in self._ledger.trades(self.config.id, limit=self.GUARD_WINDOW)
+            if t.status == "closed"
+        ]
+        if len(closed) < self.GUARD_MIN_TRADES:
+            self._risk_note = None
+            return None
+        gains = sum(t.pnl_usd or 0.0 for t in closed if (t.pnl_usd or 0.0) > 0)
+        losses = abs(sum(t.pnl_usd or 0.0 for t in closed if (t.pnl_usd or 0.0) < 0))
+        pf = (gains / losses) if losses > 0 else float("inf")
+        if pf < self.GUARD_MIN_PF:
+            self._risk_off_until = now + self.GUARD_PAUSE_S
+            self._risk_note = (
+                f"risk-off: profit factor {pf:.2f} over the last {len(closed)} "
+                f"trades — entries paused {int(self.GUARD_PAUSE_S / 60)}min"
+            )
+            logger.warning("bot %s %s", self.config.id, self._risk_note)
+            return self._risk_note
+        self._risk_note = None
+        return None
+
+    def _position_size(self, confidence: float | None) -> float:
+        """Adaptive sizing: conviction scales a position up (0.6x at the
+        55 gate -> 1.2x at score 100); a cold recent streak scales it down.
+        Bounded — no single trade can balloon."""
+        base = self.config.usd_per_trade
+        scale = 1.0
+        if confidence is not None:
+            edge = max(0.0, min(confidence - 55.0, 45.0)) / 45.0
+            scale = 0.6 + edge * 0.6
+        recent = [
+            t.pnl_usd or 0.0
+            for t in self._ledger.trades(self.config.id, limit=10)
+            if t.status == "closed"
+        ]
+        if len(recent) >= 5 and sum(recent) < 0:
+            scale *= 0.7  # trade smaller while cold
+        return round(base * scale, 2)
 
     # -- control -------------------------------------------------------------
 
@@ -166,6 +223,19 @@ class BotRunner:
                         f"trailing-stop (peak +{peak_gain_pct:.1f}%)",
                     )
                     continue
+                # Break-even stop: once a position has been meaningfully up,
+                # never let it become a full stop-loss — exit ~flat instead
+                # of round-tripping a winner into a -18% loser.
+                if (
+                    self.config.break_even_at_pct is not None
+                    and peak_gain_pct >= self.config.break_even_at_pct
+                    and change_pct <= 0.5
+                ):
+                    self._close(
+                        trade.id, trade.mint, trade.entry_price, price,
+                        f"break-even stop (peak +{peak_gain_pct:.1f}%)",
+                    )
+                    continue
                 if change_pct <= -self.config.stop_loss_pct:
                     self._close(trade.id, trade.mint, trade.entry_price, price, "stop-loss")
                     continue
@@ -221,6 +291,9 @@ class BotRunner:
         slots = self.config.max_open_positions - len(open_trades)
         if slots <= 0:
             return
+        # Negative expectancy on the recent record? Stop digging.
+        if self._expectancy_guard() is not None:
+            return
         # Exclude held mints, mints in cooldown, and (one-shot) any mint
         # ever traded — one chance per coin, then on to the next.
         now = time.monotonic()
@@ -238,7 +311,7 @@ class BotRunner:
                 bot_id=self.config.id,
                 mint=signal.mint,
                 symbol=signal.symbol,
-                usd_size=self.config.usd_per_trade,
+                usd_size=self._position_size(signal.confidence),
                 entry_price=signal.price_usd,
                 entry_note=signal.note,
             )
@@ -274,5 +347,6 @@ class BotRunner:
             ticks=self._ticks,
             errors=self._errors,
             last_error=self._last_error,
+            risk_note=self._risk_note if time.monotonic() < self._risk_off_until else None,
             **stats,  # type: ignore[arg-type]
         )

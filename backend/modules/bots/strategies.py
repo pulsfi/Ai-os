@@ -41,6 +41,9 @@ class EntrySignal:
     symbol: str
     price_usd: float
     note: str
+    # Confidence 0-100 when the strategy scored the entry — drives the
+    # runner's adaptive position sizing (None = flat size).
+    confidence: float | None = None
 
 
 def _pump_price(coin: PumpCoin) -> float | None:
@@ -124,6 +127,9 @@ class NewLaunchSniper(Strategy):
         # since first sighting), so a coin that idles and THEN pumps is
         # caught on its pump, not diluted by its idle minutes.
         velocity_lookback_s: float = 90.0,
+        # Whale/bundle X-ray: reject if the top-5 holders (excluding the
+        # bonding curve itself) own more than this share of supply.
+        max_top5_holder_pct: float = 30.0,
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius  # kept for wiring; unused (blind to bonding curve)
@@ -141,6 +147,43 @@ class NewLaunchSniper(Strategy):
         # RPC is hit ONCE per launch, not once per candidate per tick.
         self._auth_cache: dict[str, tuple[bool | None, bool | None]] = {}
         self._tick_n = 0  # REST sweep runs 1-in-6 ticks while the stream is up
+        self._max_top5_pct = max_top5_holder_pct
+        # mint -> (checked_at, ok, note): concentration verdicts, short TTL
+        # (distribution improves as more real buyers come in).
+        self._conc_cache: dict[str, tuple[float, bool, str]] = {}
+
+    async def _holders_ok(self, mint: str) -> tuple[bool, str]:
+        """Whale/bundle X-ray from RPC top-holder accounts. Called ONLY for
+        candidates that already passed every other gate, so it costs one
+        cached RPC call per would-be entry. The single largest account is
+        the bonding curve itself and is excluded. Same honesty rule as
+        breadth: can't verify the distribution -> no entry."""
+        now = time.perf_counter()
+        hit = self._conc_cache.get(mint)
+        if hit is not None and now - hit[0] < 20.0:
+            return hit[1], hit[2]
+        ok, note = False, "holder distribution unavailable — cannot verify"
+        fn = getattr(self._rpc, "get_token_largest_accounts", None)
+        if callable(fn):
+            try:
+                accounts = await fn(mint)
+                amounts = sorted(
+                    (float(a.get("uiAmount") or 0.0) for a in accounts), reverse=True
+                )
+                if amounts:
+                    top5_pct = sum(amounts[1:6]) / _PUMP_SUPPLY * 100
+                    ok = top5_pct <= self._max_top5_pct
+                    note = (
+                        f"top5 hold {top5_pct:.0f}%"
+                        if ok
+                        else f"top holders own {top5_pct:.0f}% of supply (whale/bundle risk)"
+                    )
+            except AppError:
+                pass
+        if len(self._conc_cache) > 512:
+            self._conc_cache.clear()
+        self._conc_cache[mint] = (now, ok, note)
+        return ok, note
 
     def _growth_pct_per_min(self, mint: str, mcap_usd: float | None) -> float | None:
         """Market-cap growth over the recent lookback, %/min — the
@@ -281,6 +324,9 @@ class NewLaunchSniper(Strategy):
             )
             if not verdict.approved:
                 continue  # scored too low / hard-rejected -> skip this launch
+            holders_ok, holders_note = await self._holders_ok(event.mint)
+            if not holders_ok:
+                continue  # concentrated supply — one dump wipes the position
             signals.append(
                 EntrySignal(
                     mint=event.mint,
@@ -288,8 +334,9 @@ class NewLaunchSniper(Strategy):
                     price_usd=mcap_usd / _PUMP_SUPPLY,
                     note=(
                         f"stream-detected {int(age_s)}s ago, mcap ${mcap_usd:,.0f}, "
-                        f"{verdict.note()} (price=mcap/1B)"
+                        f"{verdict.note()}, {holders_note} (price=mcap/1B)"
                     ),
+                    confidence=verdict.score,
                 )
             )
         return signals
@@ -336,6 +383,9 @@ class NewLaunchSniper(Strategy):
                 )
                 if not verdict.approved:
                     continue  # scored too low / hard-rejected
+                holders_ok, holders_note = await self._holders_ok(coin.mint)
+                if not holders_ok:
+                    continue  # concentrated supply — one dump wipes the position
                 signals.append(
                     EntrySignal(
                         mint=coin.mint,
@@ -344,8 +394,9 @@ class NewLaunchSniper(Strategy):
                         note=(
                             f"new launch {int(age_s)}s old, "
                             f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies, "
-                            f"{verdict.note()} (price=mcap/1B)"
+                            f"{verdict.note()}, {holders_note} (price=mcap/1B)"
                         ),
+                        confidence=verdict.score,
                     )
                 )
 

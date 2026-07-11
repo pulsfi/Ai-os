@@ -231,13 +231,19 @@ async def test_flow_scalper_skips_weak_flow() -> None:
 class StubRpc:
     """Returns revoked (safe) authorities so scoring can pass on good flow."""
 
-    def __init__(self, mint_auth=None, freeze_auth=None) -> None:
+    def __init__(self, mint_auth=None, freeze_auth=None, holders=None) -> None:
         from models.schemas.solana import TokenAuthorities
 
         self._auth = TokenAuthorities(mint_authority=mint_auth, freeze_authority=freeze_auth)
+        from tests.test_bots import healthy_holders
+
+        self._holders = holders if holders is not None else healthy_holders()
 
     async def get_token_authorities(self, mint: str):
         return self._auth
+
+    async def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        return self._holders
 
 
 # --- sniper: pump.fun-native CONFIRMATION entry --------------------------
@@ -328,3 +334,117 @@ def test_scheduler_write_now_appends(tmp_path: Path) -> None:
     rel = sched.write_now()
     assert sched.runs == 1
     assert "Bot Fleet Report (auto)" in (tmp_path / rel).read_text(encoding="utf-8")
+
+
+# --- profitability engine: whale gate, break-even, sizing, expectancy guard ----
+
+
+async def test_sniper_rejects_whale_concentration() -> None:
+    """Confirmed climber, broad buyers — but 5 wallets own half the supply.
+    One dump wipes the position, so the holder X-ray must veto the entry."""
+    whale_holders = [
+        {"uiAmount": 500_000_000.0},  # bonding curve (excluded)
+        {"uiAmount": 400_000_000.0},  # whale — 40% of supply
+        {"uiAmount": 50_000_000.0},
+        {"uiAmount": 30_000_000.0},
+        {"uiAmount": 10_000_000.0},
+        {"uiAmount": 5_000_000.0},
+    ]
+    sniper, stub = fresh_launch_sniper(rpc=StubRpc(holders=whale_holders))
+    assert await _enter_after_confirm(sniper, stub, 12_000) == []
+
+
+async def test_break_even_stop_protects_armed_winner(tmp_path: Path) -> None:
+    """+12% peak that collapses exits ~flat via break-even, never -18%."""
+    config = BotConfig(
+        id="bebot", name="BE", strategy="pricepath", description="t",
+        interval_s=0.05, usd_per_trade=100.0, max_open_positions=1,
+        take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
+        trail_after_pct=15.0, trail_drop_pct=8.0, break_even_at_pct=10.0,
+    )
+    runner = BotRunner(
+        config, PricePath([1.12, 1.0]), BotLedger(tmp_path / "be.db"),
+        exit_slippage_bps=0, max_gain_pct=1_000_000.0,
+    )
+    await runner.tick()  # opens at 1.0
+    await runner.tick()  # 1.12: peak arms break-even (>=10%), still holding
+    await runner.tick()  # 1.00: back to entry -> break-even exit, ~0%
+    trade = runner._ledger.trades("bebot", 1)[0]
+    assert trade.status == "closed"
+    assert "break-even" in (trade.exit_note or "")
+    assert trade.pnl_pct is not None and abs(trade.pnl_pct) < 1.0
+
+
+def test_position_size_scales_with_confidence(tmp_path: Path) -> None:
+    config = BotConfig(
+        id="szbot", name="SZ", strategy="pricepath", description="t",
+        interval_s=1, usd_per_trade=50.0, max_open_positions=1,
+        take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
+    )
+    ledger = BotLedger(tmp_path / "sz.db")
+    runner = BotRunner(config, PricePath([]), ledger)
+    assert runner._position_size(None) == 50.0        # unscored -> flat
+    assert runner._position_size(55.0) == pytest.approx(30.0)   # gate edge -> 0.6x
+    assert runner._position_size(100.0) == pytest.approx(60.0)  # max conviction -> 1.2x
+    # A cold streak (5+ recent closed trades, net negative) cuts size 30%.
+    for i in range(5):
+        tid = ledger.open_trade("szbot", f"M{i}", f"S{i}", 50.0, 1.0)
+        ledger.close_trade(tid, 0.9, "stop")
+    assert runner._position_size(100.0) == pytest.approx(42.0)  # 60 * 0.7
+
+
+async def test_expectancy_guard_pauses_bleeding_bot(tmp_path: Path) -> None:
+    """12 straight losers -> profit factor 0 -> entries pause (risk-off)."""
+    ledger = BotLedger(tmp_path / "guard.db")
+    for i in range(12):
+        tid = ledger.open_trade("gbot", f"Mint{i}", f"SY{i}", 50.0, 1.0)
+        ledger.close_trade(tid, 0.8, "stop-loss")
+    config = BotConfig(
+        id="gbot", name="G", strategy="pricepath", description="t",
+        interval_s=0.05, usd_per_trade=50.0, max_open_positions=3,
+        take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
+    )
+    runner = BotRunner(config, PricePath([]), ledger)
+    note = runner._expectancy_guard()
+    assert note is not None and "risk-off" in note
+    # And the guard is surfaced + actually blocks new entries:
+    assert runner.status().risk_note is not None
+
+    class Eager(Strategy):
+        name = "eager"
+
+        def __init__(self) -> None:  # no clients needed
+            pass
+
+        async def find_entries(self, held_mints, slots):
+            return [EntrySignal("FreshMint", "FRS", 1.0, "t")]
+
+        async def current_price(self, mint):
+            return 1.0
+
+    runner._strategy = Eager()
+    await runner.tick()
+    assert ledger.open_trades("gbot") == []  # no new positions while risk-off
+
+
+def test_insights_surface_factor_edges(tmp_path: Path) -> None:
+    """Winners vs losers per scoring factor, parsed from real trade notes."""
+    from modules.bots.manager import BotManager
+
+    ledger = BotLedger(tmp_path / "ins.db")
+    t1 = ledger.open_trade("sniper", "W1", "WIN", 50.0, 1.0,
+                           "confidence 80/100 [velocity 30/34, buyers 15/18]")
+    ledger.close_trade(t1, 1.3, "take-profit")
+    t2 = ledger.open_trade("sniper", "L1", "LOSE", 50.0, 1.0,
+                           "confidence 56/100 [velocity 20/34, buyers 2/18]")
+    ledger.close_trade(t2, 0.7, "stop-loss")
+
+    class _Stub:
+        _ledger = ledger
+        _FACTOR_RE = BotManager._FACTOR_RE
+
+    result = BotManager.insights(_Stub(), "sniper")
+    assert result.closed_analyzed == 2 and result.wins == 1 and result.losses == 1
+    buyers = next(f for f in result.factors if f.name == "buyers")
+    assert buyers.winners_avg == 15.0 and buyers.losers_avg == 2.0
+    assert buyers.edge == 13.0
