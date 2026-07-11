@@ -149,7 +149,7 @@ async def test_sniper_filters_and_prices() -> None:
             pump_coin("Fresh1", 10_000 + bump),               # good, climbing
             pump_coin("TooOld", 10_000 + bump, age_s=600),    # too old
             pump_coin("TooSmall", 2_000),                     # below mcap floor
-            pump_coin("NoReplies", 10_000 + bump, replies=0), # no traction
+            pump_coin("NoReplies", 10_000 + bump, replies=0), # fine: replies score, not gate
             pump_coin("Done", 10_000 + bump, complete=True),  # graduated
             pump_coin("Fresh2", 20_000 + bump),               # good, climbing
         ]
@@ -161,16 +161,17 @@ async def test_sniper_filters_and_prices() -> None:
     )
     # First pass records sightings — nothing is bought on sight (confirmation).
     assert await sniper.find_entries(held_mints=set(), slots=5) == []
-    # Caps climb -> confirmed buy pressure -> the good ones enter.
+    # Caps climb -> confirmed buy pressure -> the climbing ones enter
+    # (zero replies is a scored factor, not a hard gate).
     stub._coins = coins(bump=1_500)
     signals = await sniper.find_entries(held_mints=set(), slots=5)
-    assert [s.mint for s in signals] == ["Fresh1", "Fresh2"]
+    assert [s.mint for s in signals] == ["Fresh1", "NoReplies", "Fresh2"]
     # price = mcap / 1B fixed supply
     assert signals[0].price_usd == pytest.approx(11_500 / 1_000_000_000)
     # held mints are excluded (caps still climbing)
     stub._coins = coins(bump=3_000)
     signals = await sniper.find_entries(held_mints={"Fresh1"}, slots=5)
-    assert [s.mint for s in signals] == ["Fresh2"]
+    assert [s.mint for s in signals] == ["NoReplies", "Fresh2"]
 
 
 # --- runner ----------------------------------------------------------------

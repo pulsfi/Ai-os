@@ -83,6 +83,12 @@ class NewLaunchSniper(Strategy):
     exposes — market cap, market-cap VELOCITY, bonding-curve progress,
     community — via `score_pumpfun_launch`.
 
+    Event-driven and API-light: the stream auto-subscribes every launch's
+    trades, so candidate market caps update push-style in real time (the
+    velocity source), trade events wake the runner instantly, authorities
+    are cached one-RPC-per-mint, and the REST sweep only runs as a thin
+    safety net while the stream is healthy.
+
     "Confirmation" entry (the pro discipline the losing blind-snipe runs
     lacked): a launch is NEVER bought on first sighting. The bot records
     its market cap, waits a few seconds, and only enters once it has SEEN
@@ -131,6 +137,10 @@ class NewLaunchSniper(Strategy):
         self._lookback_s = velocity_lookback_s
         # mint -> recent (monotonic ts, mcap_usd) readings, for velocity.
         self._sightings: dict[str, deque[tuple[float, float]]] = {}
+        # Authorities are one-shot on-chain facts: cache them per mint so the
+        # RPC is hit ONCE per launch, not once per candidate per tick.
+        self._auth_cache: dict[str, tuple[bool | None, bool | None]] = {}
+        self._tick_n = 0  # REST sweep runs 1-in-6 ticks while the stream is up
 
     def _growth_pct_per_min(self, mint: str, mcap_usd: float | None) -> float | None:
         """Market-cap growth over the recent lookback, %/min — the
@@ -188,15 +198,19 @@ class NewLaunchSniper(Strategy):
         """
         growth = self._growth_pct_per_min(mint, mcap_usd)
 
-        # On-chain mint/freeze authority (rug / honeypot gates).
-        mint_revoked = freeze_revoked = None
-        if self._rpc is not None:
+        # On-chain mint/freeze authority (rug / honeypot gates) — cached:
+        # one RPC call per mint ever, not one per tick.
+        cached = self._auth_cache.get(mint)
+        if cached is None and self._rpc is not None:
             try:
                 auth = await self._rpc.get_token_authorities(mint)
-                mint_revoked = auth.mint_authority is None
-                freeze_revoked = auth.freeze_authority is None
+                cached = (auth.mint_authority is None, auth.freeze_authority is None)
+                if len(self._auth_cache) > 2048:  # cheap bound; rebuilt on demand
+                    self._auth_cache.clear()
+                self._auth_cache[mint] = cached
             except AppError:
-                pass  # unknown authority -> 0 points (not a hard reject)
+                cached = (None, None)  # unknown -> 0 points; retry next tick
+        mint_revoked, freeze_revoked = cached if cached is not None else (None, None)
 
         return score_pumpfun_launch(
             mcap_usd=mcap_usd,
@@ -217,9 +231,9 @@ class NewLaunchSniper(Strategy):
     ) -> list[EntrySignal]:
         """Fast path: launches pushed by the live stream (no REST latency).
 
-        The stream carries no reply/progress data, so the market-cap
-        velocity gate is the traction check here — it must be climbing
-        (confirmed across two readings) or no entry.
+        The stream auto-subscribes every launch's trades, so each candidate
+        has a LIVE market-cap mark — that moving mark is what the velocity
+        gate measures. Zero API calls: everything arrives over the socket.
         """
         if self._stream is None:
             return []
@@ -235,9 +249,16 @@ class NewLaunchSniper(Strategy):
         for event in events:
             if len(signals) >= slots:
                 break
-            if event.mint in held_mints or event.mcap_sol is None:
+            if event.mint in held_mints:
                 continue
-            mcap_usd = event.mcap_sol * sol_usd
+            # Live trade mark first (updates with every streamed swap);
+            # the creation snapshot only seeds coins that haven't traded.
+            mcap_sol = self._stream.latest_mcap_sol(event.mint)
+            if mcap_sol is None:
+                mcap_sol = event.mcap_sol
+            if mcap_sol is None:
+                continue
+            mcap_usd = mcap_sol * sol_usd
             if not (self._min_mcap <= mcap_usd <= self._max_mcap):
                 continue
             age_s = _time.monotonic() - event.received_at
@@ -259,11 +280,15 @@ class NewLaunchSniper(Strategy):
 
     async def find_entries(self, held_mints: set[str], slots: int) -> list[EntrySignal]:
         # 1) Stream first — the whole point of fast sniping.
+        self._tick_n += 1
         signals = await self._stream_candidates(held_mints, slots)
         taken = {s.mint for s in signals} | held_mints
 
-        # 2) REST sweep fills remaining slots (also covers stream downtime).
-        if len(signals) < slots:
+        # 2) REST sweep as a safety net only: every tick while the stream is
+        #    down, but just 1-in-6 ticks (~30s) while it's healthy — the
+        #    stream already carries everything, so don't burn API calls.
+        stream_live = self._stream is not None and getattr(self._stream, "connected", False)
+        if len(signals) < slots and (not stream_live or self._tick_n % 6 == 0):
             coins = await self._pumpfun.get_new_coins(limit=30)
             now = datetime.now(timezone.utc)
             for coin in coins:
@@ -277,7 +302,6 @@ class NewLaunchSniper(Strategy):
                     or coin.usd_market_cap is None
                     or not (self._min_mcap <= coin.usd_market_cap <= self._max_mcap)
                     or (now - coin.created_at).total_seconds() > self._max_age_s
-                    or coin.reply_count < 1
                 ):
                     continue
                 age_s = (now - coin.created_at).total_seconds()

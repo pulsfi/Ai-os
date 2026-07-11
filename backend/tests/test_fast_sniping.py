@@ -59,6 +59,44 @@ def test_stream_recent_expires_old_events() -> None:
     assert [e.mint for e in stream.recent(60)] == ["Fresh"]
 
 
+def test_stream_auto_watches_new_launches() -> None:
+    """Every create is auto-subscribed for its candidacy window, so its
+    trades update the live mark WITHOUT a manual watch — that moving mark
+    is the sniper's velocity source."""
+    stream = LaunchStream(watch_window_s=300.0)
+    stream._handle(json.dumps({"txType": "create", "mint": "AutoMint", "marketCapSol": 28.0}))
+    assert "AutoMint" in stream._auto
+    # A trade lands for the candidate (never manually watched):
+    stream._handle(json.dumps({"txType": "buy", "mint": "AutoMint", "marketCapSol": 40.0}))
+    assert stream.latest_mcap_sol("AutoMint") == 40.0
+
+
+def test_stream_auto_watch_expires_but_held_mints_survive() -> None:
+    stream = LaunchStream(watch_window_s=300.0)
+    now = time.monotonic()
+    stream._auto = {"Expired": now - 400, "HeldOne": now - 400, "Alive": now}
+    stream._watched = {"HeldOne"}
+    stream._trade_mcap = {"Expired": (1.0, now), "HeldOne": (2.0, now), "Alive": (3.0, now)}
+    stream._prune_auto()
+    assert set(stream._auto) == {"Alive"}
+    assert "Expired" not in stream._trade_mcap      # candidate gone
+    assert stream._trade_mcap["HeldOne"] == (2.0, now)  # position mark kept
+
+
+def test_stream_candidate_trades_wake_the_sniper() -> None:
+    """A candidate's trade fires listeners (velocity changed -> tick NOW)."""
+    stream = LaunchStream()
+    fired: list[int] = []
+    stream.add_listener(lambda: fired.append(1))
+    stream._handle(json.dumps({"txType": "create", "mint": "M1", "marketCapSol": 28.0}))
+    assert len(fired) == 1  # the launch itself
+    stream._handle(json.dumps({"txType": "buy", "mint": "M1", "marketCapSol": 30.0}))
+    assert len(fired) == 2  # the candidate's trade
+    # Trades for mints we don't track do NOT wake anyone.
+    stream._handle(json.dumps({"txType": "buy", "mint": "Other", "marketCapSol": 9.9}))
+    assert len(fired) == 2
+
+
 # --- stream-first sniper -------------------------------------------------------
 
 
@@ -155,6 +193,25 @@ async def test_sniper_stream_band_filter_applies() -> None:
         StubPumpFun([]), market=FakeMarket(), helius=None, stream=FakeStream(events),  # type: ignore[arg-type]
     )
     assert await sniper.find_entries(set(), 3) == []
+
+
+async def test_sniper_velocity_reads_live_trade_marks() -> None:
+    """Regression for the zero-trades defect: the create event's mcap is a
+    frozen snapshot, so velocity MUST come from the live trade mark that
+    the auto-watch keeps updated — otherwise every launch reads flat and
+    is rejected forever."""
+    event = LaunchEvent(mint="LiveMint", name="L", symbol="LVE", mcap_sol=100.0)
+    stream = FakeStream([event], trade_mcap={"LiveMint": 100.0})
+    sniper = NewLaunchSniper(
+        StubPumpFun([]), market=FakeMarket(), stream=stream,  # type: ignore[arg-type]
+        rpc=_OkRpc(), confirm_window_s=0.0,
+    )
+    assert await sniper.find_entries(set(), 3) == []  # first reading recorded
+    # The mark moves 100 -> 110 SOL while the create snapshot stays frozen:
+    stream._trade["LiveMint"] = 110.0
+    signals = await sniper.find_entries(set(), 3)
+    assert [s.mint for s in signals] == ["LiveMint"]
+    assert signals[0].price_usd == pytest.approx(22_000 / 1_000_000_000)
 
 
 async def test_sniper_rest_fallback_still_works_with_stream() -> None:

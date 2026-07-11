@@ -42,12 +42,21 @@ class LaunchEvent:
 
 
 class LaunchStream:
-    """Maintains the live event feed + latest trade marks for watched mints."""
+    """Maintains the live event feed + latest trade marks.
 
-    def __init__(self) -> None:
+    Every new launch is AUTO-subscribed to its trade feed for the candidacy
+    window (watch_window_s). That live mark is what lets the sniper measure
+    market-cap velocity BEFORE it holds anything — all pushed over the one
+    socket, zero REST/RPC polling. Position marks (`watch`) ride the same
+    mechanism and simply pin the subscription past the window.
+    """
+
+    def __init__(self, watch_window_s: float = 300.0) -> None:
         self._events: deque[LaunchEvent] = deque(maxlen=300)
         self._trade_mcap: dict[str, tuple[float, float]] = {}  # mint -> (mcapSol, mono)
-        self._watched: set[str] = set()
+        self._watched: set[str] = set()  # held positions (pinned)
+        self._auto: dict[str, float] = {}  # candidate mint -> received_at
+        self._watch_window_s = watch_window_s
         self._listeners: list[Callable[[], None]] = []
         self._task: asyncio.Task[None] | None = None
         self._ws: websockets.ClientConnection | None = None
@@ -80,11 +89,10 @@ class LaunchStream:
                     backoff = 1.0
                     logger.info("launch stream connected")
                     await ws.send(json.dumps({"method": "subscribeNewToken"}))
-                    if self._watched:  # resubscribe after reconnects
+                    keys = sorted(self._watched | set(self._auto))
+                    if keys:  # resubscribe after reconnects
                         await ws.send(
-                            json.dumps(
-                                {"method": "subscribeTokenTrade", "keys": sorted(self._watched)}
-                            )
+                            json.dumps({"method": "subscribeTokenTrade", "keys": keys})
                         )
                     async for raw in ws:
                         self._handle(raw)
@@ -120,16 +128,62 @@ class LaunchStream:
                     mcap_sol=float(mcap) if isinstance(mcap, (int, float)) else None,
                 )
             )
-            for listener in self._listeners:
-                try:
-                    listener()
-                except Exception:  # noqa: BLE001 — a listener must not kill the feed
-                    logger.exception("launch stream listener failed")
+            # Auto-watch the launch's trades for its candidacy window so the
+            # sniper can see its market cap MOVE before holding it. Prune
+            # expired candidates on the same cadence (creates are frequent).
+            self._auto[mint] = time.monotonic()
+            self._subscribe([mint])
+            self._prune_auto()
+            self._notify()
         elif tx_type in ("buy", "sell") and isinstance(mint, str):
             mcap = msg.get("marketCapSol")
             if isinstance(mcap, (int, float)):
                 self.trades_seen += 1
                 self._trade_mcap[mint] = (float(mcap), time.monotonic())
+                # A candidate traded — its velocity just changed; wake the
+                # sniper NOW instead of waiting out the tick interval.
+                if mint in self._auto:
+                    self._notify()
+
+    def _notify(self) -> None:
+        for listener in self._listeners:
+            try:
+                listener()
+            except Exception:  # noqa: BLE001 — a listener must not kill the feed
+                logger.exception("launch stream listener failed")
+
+    def _send_soon(self, payload: dict) -> None:
+        """Fire-and-forget a control frame from sync context (event handler)."""
+        if self._ws is None:
+            return
+        ws = self._ws
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # no loop (unit tests) — reconnect logic resubscribes anyway
+
+        async def _send() -> None:
+            with contextlib.suppress(Exception):
+                await ws.send(json.dumps(payload))
+
+        loop.create_task(_send())
+
+    def _subscribe(self, mints: list[str]) -> None:
+        self._send_soon({"method": "subscribeTokenTrade", "keys": mints})
+
+    def _prune_auto(self) -> None:
+        """Expire candidate subscriptions past the window (held mints stay)."""
+        cutoff = time.monotonic() - self._watch_window_s
+        expired = [m for m, ts in self._auto.items() if ts < cutoff]
+        if not expired:
+            return
+        for m in expired:
+            del self._auto[m]
+            if m not in self._watched:
+                self._trade_mcap.pop(m, None)
+        gone = [m for m in expired if m not in self._watched]
+        if gone:
+            self._send_soon({"method": "unsubscribeTokenTrade", "keys": gone})
 
     # -- consumption -----------------------------------------------------------
 
@@ -150,10 +204,12 @@ class LaunchStream:
         return entry[0]
 
     async def watch(self, mint: str) -> None:
-        """Stream this mint's trades (live price marks for an open position)."""
+        """Pin this mint's trade feed (live price marks for an open position)."""
         if mint in self._watched:
             return
         self._watched.add(mint)
+        if mint in self._auto:
+            return  # already subscribed as a candidate — just pinned now
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.send(
@@ -162,6 +218,8 @@ class LaunchStream:
 
     async def unwatch(self, mint: str) -> None:
         self._watched.discard(mint)
+        if mint in self._auto:
+            return  # still a live candidate — keep its feed and mark
         self._trade_mcap.pop(mint, None)
         if self._ws is not None:
             with contextlib.suppress(Exception):
@@ -175,6 +233,7 @@ class LaunchStream:
             "events_seen": self.events_seen,
             "trades_seen": self.trades_seen,
             "watched": len(self._watched),
+            "candidates": len(self._auto),
         }
 
 
