@@ -121,12 +121,21 @@ def test_pump_broad_demand_approves() -> None:
 
 
 def test_pump_unknown_breadth_scores_zero_without_reject() -> None:
-    """REST-path coins have no stream flow: unknown breadth must not
-    hard-reject (velocity still gates), it just earns 0 of the 18 points."""
-    v = pump()  # unique_buyers defaults to None
+    """Snapshot mode (Decision Card): unknown breadth earns 0 of the 18
+    points but doesn't hard-reject unless breadth is required."""
+    v = pump()  # unique_buyers defaults to None, require_breadth False
     assert not any("bundle" in r.lower() for r in v.rejects)
     buyers = next(f for f in v.factors if f.name == "buyers")
     assert buyers.points == 0 and buyers.detail == "unknown"
+
+
+def test_pump_required_breadth_rejects_unknown() -> None:
+    """The live sniper requires breadth: no observed buyer flow = no entry.
+    Regression for the -$473 session where unknown-breadth REST entries
+    were exactly the hole the bundle rugs came through."""
+    v = pump(require_breadth=True)  # unique_buyers None
+    assert v.approved is False
+    assert any("cannot verify demand breadth" in r for r in v.rejects)
 
 
 def test_pump_snapshot_mode_scores_without_velocity() -> None:

@@ -143,6 +143,26 @@ class _OkRpc:
         return TokenAuthorities(mint_authority=None, freeze_authority=None)
 
 
+class FlowStubStream:
+    """Minimal stream stub: no live events/marks, but healthy demand breadth
+    (the sniper now refuses ANY entry without verified breadth)."""
+
+    def recent(self, max_age_s: float) -> list:
+        return []
+
+    def latest_mcap_sol(self, mint: str, max_age_s: float = 20.0) -> None:
+        return None
+
+    def flow(self, mint: str) -> tuple[int, int, int]:
+        return (8, 20, 3)  # broad, buy-heavy
+
+    async def watch(self, mint: str) -> None:
+        pass
+
+    async def unwatch(self, mint: str) -> None:
+        pass
+
+
 async def test_sniper_filters_and_prices() -> None:
     def coins(bump: float = 0) -> list:
         return [
@@ -158,6 +178,7 @@ async def test_sniper_filters_and_prices() -> None:
     sniper = NewLaunchSniper(
         stub, market=None,  # type: ignore[arg-type]
         helius=_GoodHelius(), rpc=_OkRpc(), confirm_window_s=0.0,
+        stream=FlowStubStream(),  # type: ignore[arg-type]
     )
     # First pass records sightings — nothing is bought on sight (confirmation).
     assert await sniper.find_entries(held_mints=set(), slots=5) == []

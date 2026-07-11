@@ -149,6 +149,7 @@ def score_pumpfun_launch(
     min_buyers: int = 3,
     min_confidence: float = 55.0,
     require_growth_confirmation: bool = True,
+    require_breadth: bool = False,
 ) -> ConfidenceScore:
     """Confidence for a token still on the pump.fun bonding curve.
 
@@ -219,6 +220,10 @@ def score_pumpfun_launch(
         Factor("buyers", ub, 18,
                f"{unique_buyers} buyers" if unique_buyers is not None else "unknown")
     )
+    if unique_buyers is None and require_breadth:
+        # First live session proved this must be a hard gate: unknown-breadth
+        # entries (REST path) were exactly the ones the bundle rugs used.
+        rejects.append("no buyer flow observed — cannot verify demand breadth")
     if unique_buyers is not None and unique_buyers < min_buyers:
         rejects.append(
             f"only {unique_buyers} distinct buyer(s) — bundle/wash pattern, not demand"

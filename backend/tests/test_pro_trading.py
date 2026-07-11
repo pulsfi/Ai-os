@@ -247,10 +247,13 @@ class StubRpc:
 
 
 def fresh_launch_sniper(rpc: object | None = None) -> tuple[NewLaunchSniper, StubPumpFun]:
+    from tests.test_bots import FlowStubStream
+
     stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
     sniper = NewLaunchSniper(
         stub, market=None, helius=None,  # type: ignore[arg-type]
         rpc=rpc or StubRpc(), confirm_window_s=0.0,
+        stream=FlowStubStream(),  # type: ignore[arg-type]
     )
     return sniper, stub
 

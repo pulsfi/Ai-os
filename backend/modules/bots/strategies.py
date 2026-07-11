@@ -230,6 +230,9 @@ class NewLaunchSniper(Strategy):
             buys=buys,
             sells=sells,
             min_confidence=self._min_confidence,
+            # No breadth data = no entry. The first live session proved the
+            # bundle rugs came in exactly through unknown-breadth entries.
+            require_breadth=True,
         )
 
     async def _stream_candidates(
@@ -318,12 +321,18 @@ class NewLaunchSniper(Strategy):
                 ):
                     continue
                 age_s = (now - coin.created_at).total_seconds()
+                # Breadth still comes from the stream (it auto-subscribes
+                # every create, so REST-discovered coins have flow too).
+                flow_fn = getattr(self._stream, "flow", None) if self._stream else None
+                fl = flow_fn(coin.mint) if callable(flow_fn) else None
+                buyers, buys, sells = fl if fl is not None else (None, None, None)
                 verdict = await self._confidence(
                     coin.mint,
                     coin.usd_market_cap,
                     age_s,
                     bonding_progress_pct=coin.bonding_progress_pct,
                     reply_count=coin.reply_count,
+                    unique_buyers=buyers, buys=buys, sells=sells,
                 )
                 if not verdict.approved:
                     continue  # scored too low / hard-rejected

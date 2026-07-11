@@ -120,11 +120,14 @@ def test_stream_candidate_trades_wake_the_sniper() -> None:
 
 
 class FakeStream:
-    """Duck-typed LaunchStream for strategy tests."""
+    """Duck-typed LaunchStream for strategy tests (healthy breadth default —
+    the sniper hard-rejects any entry without verified breadth)."""
 
-    def __init__(self, events: list[LaunchEvent], trade_mcap: dict[str, float] | None = None):
+    def __init__(self, events: list[LaunchEvent], trade_mcap: dict[str, float] | None = None,
+                 flow: tuple[int, int, int] | None = (8, 20, 3)):
         self._events = events
         self._trade = trade_mcap or {}
+        self._flow_default = flow
         self.watched: list[str] = []
         self.unwatched: list[str] = []
 
@@ -133,6 +136,9 @@ class FakeStream:
 
     def latest_mcap_sol(self, mint: str, max_age_s: float = 20.0) -> float | None:
         return self._trade.get(mint)
+
+    def flow(self, mint: str) -> tuple[int, int, int] | None:
+        return self._flow_default
 
     async def watch(self, mint: str) -> None:
         self.watched.append(mint)
