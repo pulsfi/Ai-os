@@ -144,23 +144,31 @@ class _OkRpc:
 
 
 async def test_sniper_filters_and_prices() -> None:
-    coins = [
-        pump_coin("Fresh1", 10_000),                 # good
-        pump_coin("TooOld", 10_000, age_s=600),      # too old
-        pump_coin("TooSmall", 2_000),                # below mcap floor
-        pump_coin("NoReplies", 10_000, replies=0),   # no traction
-        pump_coin("Done", 10_000, complete=True),    # graduated
-        pump_coin("Fresh2", 20_000),                 # good
-    ]
+    def coins(bump: float = 0) -> list:
+        return [
+            pump_coin("Fresh1", 10_000 + bump),               # good, climbing
+            pump_coin("TooOld", 10_000 + bump, age_s=600),    # too old
+            pump_coin("TooSmall", 2_000),                     # below mcap floor
+            pump_coin("NoReplies", 10_000 + bump, replies=0), # no traction
+            pump_coin("Done", 10_000 + bump, complete=True),  # graduated
+            pump_coin("Fresh2", 20_000 + bump),               # good, climbing
+        ]
+
+    stub = StubPumpFun(coins())
     sniper = NewLaunchSniper(
-        StubPumpFun(coins), market=None,  # type: ignore[arg-type]
-        helius=_GoodHelius(), rpc=_OkRpc(),
+        stub, market=None,  # type: ignore[arg-type]
+        helius=_GoodHelius(), rpc=_OkRpc(), confirm_window_s=0.0,
     )
+    # First pass records sightings — nothing is bought on sight (confirmation).
+    assert await sniper.find_entries(held_mints=set(), slots=5) == []
+    # Caps climb -> confirmed buy pressure -> the good ones enter.
+    stub._coins = coins(bump=1_500)
     signals = await sniper.find_entries(held_mints=set(), slots=5)
     assert [s.mint for s in signals] == ["Fresh1", "Fresh2"]
     # price = mcap / 1B fixed supply
-    assert signals[0].price_usd == pytest.approx(10_000 / 1_000_000_000)
-    # held mints are excluded
+    assert signals[0].price_usd == pytest.approx(11_500 / 1_000_000_000)
+    # held mints are excluded (caps still climbing)
+    stub._coins = coins(bump=3_000)
     signals = await sniper.find_entries(held_mints={"Fresh1"}, slots=5)
     assert [s.mint for s in signals] == ["Fresh2"]
 

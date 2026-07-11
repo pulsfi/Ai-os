@@ -6,8 +6,8 @@ from fastapi.testclient import TestClient
 
 from config import Settings
 from core.application import create_app
-from core.dependencies import get_helius, get_market, get_solana_client
-from core.exceptions import ExternalServiceError
+from core.dependencies import get_helius, get_market, get_pumpfun, get_solana_client
+from core.exceptions import ExternalServiceError, NotFoundError
 from models.schemas.solana import TokenAuthorities
 from modules.market.helius import TokenActivity
 from modules.market.market_models import (
@@ -16,6 +16,7 @@ from modules.market.market_models import (
     TokenInfo,
     TokenMarketData,
 )
+from modules.market.pumpfun import PumpCoin
 
 NOW = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)
 
@@ -122,15 +123,31 @@ class FakeRpc:
         return TokenAuthorities(mint=mint, mint_authority=None, freeze_authority=None)
 
 
+class FakePumpFun:
+    """Returns a live bonding-curve coin for PUMPMINT; 404s everything else
+    so graduated/non-pump mints fall through to the Helius path."""
+
+    async def get_coin(self, mint: str) -> PumpCoin:
+        if mint != "PUMPMINT":
+            raise NotFoundError("coin not found")
+        return PumpCoin(
+            mint=mint, name="Pumper", symbol="PUMP", created_at=NOW,
+            usd_market_cap=18_000.0, reply_count=20, complete=False,
+            bonding_progress_pct=12.0, is_currently_live=True,
+        )
+
+
 def score_client(settings: Settings) -> TestClient:
     app = create_app(settings)
     app.dependency_overrides[get_market] = FakeManager
     app.dependency_overrides[get_helius] = FakeHelius
     app.dependency_overrides[get_solana_client] = FakeRpc
+    app.dependency_overrides[get_pumpfun] = FakePumpFun
     return TestClient(app)
 
 
 def test_score_endpoint_shape_and_signals(settings: Settings) -> None:
+    # MintA isn't a pump coin -> Helius/flow path.
     body = score_client(settings).get("/api/v1/market/score/MintA").json()
     assert body["mint"] == "MintA"
     assert 0 <= body["score"] <= 100
@@ -145,3 +162,14 @@ def test_score_healthy_token_is_approved(settings: Settings) -> None:
     body = score_client(settings).get("/api/v1/market/score/MintA").json()
     # Buy-heavy flow, many wallets, revoked authorities => passes the gate.
     assert body["approved"] is True and not body["rejects"]
+
+
+def test_score_pumpfun_token_uses_native_signals(settings: Settings) -> None:
+    """A bonding-curve token is scored on pump.fun-native factors, not the
+    (blind) Helius flow path."""
+    body = score_client(settings).get("/api/v1/market/score/PUMPMINT").json()
+    names = {f["name"] for f in body["factors"]}
+    assert {"velocity", "bonding", "replies", "mcap"} <= names
+    assert body["market_cap"] == 18_000.0
+    # Single snapshot -> no velocity -> not approved, but NOT blocked on it.
+    assert not any("confirm" in r.lower() for r in body["rejects"])

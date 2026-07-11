@@ -52,9 +52,10 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             name="Launch Sniper",
             strategy="new_launch_sniper",
             description=(
-                "Scores every launch 0-100 on real signals (authority rug/"
-                "honeypot gates, buy pressure, unique wallets, mcap, age) and "
-                "only buys high-confidence ones — never blind"
+                "Scores every pump.fun launch 0-100 on native signals "
+                "(authority rug/honeypot gates, market-cap velocity, bonding "
+                "progress, community, age). CONFIRMATION entry: never buys on "
+                "first sight — only once it has watched the cap actually climb"
             ),
             interval_s=settings.bots_sniper_interval_seconds,
             usd_per_trade=usd,

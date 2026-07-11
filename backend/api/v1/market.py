@@ -3,12 +3,14 @@
 Thin routers per the architecture: all logic lives in modules/market.
 """
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from core.dependencies import HeliusDep, MarketManagerDep, PumpFunDep, SolanaClientDep
 from core.exceptions import AppError
-from modules.bots.scoring import score_launch
+from modules.bots.scoring import score_launch, score_pumpfun_launch
 from modules.market.helius import TokenActivity
 from modules.market.market_models import (
     HistoryPoint,
@@ -56,19 +58,23 @@ class TokenScore(BaseModel):
 
 @router.get("/score/{mint}", response_model=TokenScore)
 async def token_score(
-    mint: str, rpc: SolanaClientDep, helius: HeliusDep, manager: MarketManagerDep
+    mint: str,
+    rpc: SolanaClientDep,
+    helius: HeliusDep,
+    manager: MarketManagerDep,
+    pumpfun: PumpFunDep,
 ) -> TokenScore:
-    """Score any token 0-100 on measurable on-chain + flow signals (the
-    real confidence engine behind the AI Decision Card). Unmeasurable
-    signals count as unknown — never fabricated."""
-    buy_ratio = wallets = swaps = None
-    if helius.is_configured:
-        try:
-            act = await helius.get_token_activity(mint, limit=40)
-            buy_ratio, wallets, swaps = act.buy_ratio_pct, act.unique_wallets, act.swaps
-        except AppError:
-            pass
+    """Score any token 0-100 on measurable signals (the confidence engine
+    behind the AI Decision Card). Unmeasurable signals count as unknown —
+    never fabricated.
 
+    A token still on the pump.fun bonding curve is scored on pump.fun-native
+    signals (market cap, bonding progress, community, authorities), because
+    Helius / DEX aggregators are blind to it until it graduates. Everything
+    else uses on-chain flow + authorities. This is a single-snapshot view,
+    so market-cap velocity (the live sniper's confirmation gate) is shown as
+    unknown rather than blocking the card."""
+    # On-chain mint/freeze authority — a rug/honeypot gate for both paths.
     mint_revoked = freeze_revoked = None
     try:
         auth = await rpc.get_token_authorities(mint)
@@ -76,6 +82,42 @@ async def token_score(
         freeze_revoked = auth.freeze_authority is None
     except AppError:
         pass
+
+    # Bonding-curve token? Score it the way the sniper now does.
+    coin = None
+    try:
+        coin = await pumpfun.get_coin(mint)
+    except AppError:
+        pass
+    if coin is not None and not coin.complete:
+        age_s = (datetime.now(timezone.utc) - coin.created_at).total_seconds()
+        verdict = score_pumpfun_launch(
+            mcap_usd=coin.usd_market_cap,
+            mcap_growth_pct_per_min=None,  # single snapshot has no velocity
+            bonding_progress_pct=coin.bonding_progress_pct,
+            reply_count=coin.reply_count,
+            age_s=age_s,
+            mint_revoked=mint_revoked,
+            freeze_revoked=freeze_revoked,
+            min_mcap_usd=5_000, max_mcap_usd=60_000, max_age_s=300,
+            require_growth_confirmation=False,
+        )
+        return TokenScore(
+            mint=mint, score=verdict.score, approved=verdict.approved,
+            factors=[ScoreFactor(**f.__dict__) for f in verdict.factors],
+            rejects=verdict.rejects,
+            market_cap=coin.usd_market_cap,
+            mint_revoked=mint_revoked, freeze_revoked=freeze_revoked,
+        )
+
+    # Graduated / non-pump token: on-chain flow + market context.
+    buy_ratio = wallets = swaps = None
+    if helius.is_configured:
+        try:
+            act = await helius.get_token_activity(mint, limit=40)
+            buy_ratio, wallets, swaps = act.buy_ratio_pct, act.unique_wallets, act.swaps
+        except AppError:
+            pass
 
     mcap = liq = None
     try:

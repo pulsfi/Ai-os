@@ -14,12 +14,13 @@ market-cap change — recorded honestly in each trade's entry_note.
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from core.exceptions import AppError
-from modules.bots.scoring import ConfidenceScore, score_launch
+from modules.bots.scoring import ConfidenceScore, score_pumpfun_launch
 from modules.market import MarketManager
 from modules.market.helius import HeliusClient
 from modules.market.pumpfun import PumpCoin, PumpFunClient
@@ -73,16 +74,20 @@ class Strategy(ABC):
 
 
 class NewLaunchSniper(Strategy):
-    """Buys brand-new pump.fun launches that show immediate traction.
+    """Buys pump.fun launches that CONFIRM real, climbing demand.
 
-    Two-stage filter, like a pro sniper:
-      1. Launch shape — younger than max_age_s, market cap above the floor
-         (someone besides the creator bought), at least one reply.
-      2. FLOW CONFIRMATION (when Helius is configured) — the token's live
-         transactions must show real buying: enough swaps, enough distinct
-         wallets, and buys outweighing sells. A pump with no flow behind
-         it is a trap; those candidates are skipped, and a failed flow
-         lookup skips the coin too (conservative by default).
+    While a token is on the bonding curve, Helius and the DEX aggregators
+    are blind to its trades (they only index it after it graduates to
+    Raydium). So instead of flow, this scores the signals pump.fun itself
+    exposes — market cap, market-cap VELOCITY, bonding-curve progress,
+    community — via `score_pumpfun_launch`.
+
+    "Confirmation" entry (the pro discipline the losing blind-snipe runs
+    lacked): a launch is NEVER bought on first sighting. The bot records
+    its market cap, waits a few seconds, and only enters once it has SEEN
+    the cap actually climb — i.e. people are buying. Flat or dumping
+    launches, and any with active mint/freeze authority, are hard-rejected.
+    It trades far less and only when momentum is real.
 
     Meme-coin sniping is the highest-risk style there is — which is
     exactly why it runs on virtual dollars while the record accumulates.
@@ -100,19 +105,48 @@ class NewLaunchSniper(Strategy):
         max_age_s: float = 300.0,
         min_mcap_usd: float = 5_000.0,
         max_mcap_usd: float = 60_000.0,
-        # Confidence gate: score every candidate 0-100 on measurable
-        # on-chain + flow signals; enter only at/above this. Missing demand
-        # data can't reach it, so the bot stays out rather than guessing.
+        # Confidence gate: score every candidate 0-100 on pump.fun-native
+        # signals; enter only at/above this. A launch we haven't yet seen
+        # climb can't reach it, so the bot stays out rather than guessing.
         min_confidence: float = 55.0,
+        # Minimum seconds between the first sighting and an entry — the
+        # window over which we confirm the market cap is actually climbing.
+        confirm_window_s: float = 6.0,
     ) -> None:
         super().__init__(pumpfun, market)
-        self._helius = helius
+        self._helius = helius  # kept for wiring; unused (blind to bonding curve)
         self._stream = stream
         self._rpc = rpc
         self._max_age_s = max_age_s
         self._min_mcap = min_mcap_usd
         self._max_mcap = max_mcap_usd
         self._min_confidence = min_confidence
+        self._confirm_window_s = confirm_window_s
+        # mint -> (monotonic ts, mcap_usd) of first sighting, for velocity.
+        self._first_seen: dict[str, tuple[float, float]] = {}
+
+    def _growth_pct_per_min(self, mint: str, mcap_usd: float | None) -> float | None:
+        """Market-cap growth since first sighting, %/min — the buy-pressure
+        proxy. None until we have a second reading ≥confirm_window_s later,
+        which is exactly what makes entry a CONFIRMATION rather than a guess."""
+        now = time.perf_counter()  # high-res: monotonic() is ~15ms-coarse on Windows
+        # Prune stale trackers so the dict can't grow without bound.
+        if len(self._first_seen) > 512:
+            cutoff = now - self._max_age_s * 2
+            self._first_seen = {
+                m: v for m, v in self._first_seen.items() if v[0] >= cutoff
+            }
+        if mcap_usd is None or mcap_usd <= 0:
+            return None
+        prev = self._first_seen.get(mint)
+        if prev is None:
+            self._first_seen[mint] = (now, mcap_usd)
+            return None  # first sighting — unconfirmed by design
+        t0, m0 = prev
+        dt = now - t0
+        if dt <= 0 or dt < self._confirm_window_s or m0 <= 0:
+            return None  # too soon to trust a trend
+        return (mcap_usd - m0) / m0 / (dt / 60.0) * 100.0
 
     async def _sol_usd(self) -> float | None:
         """SOL/USD from the cached watchlist (30s TTL) for mcapSol -> USD."""
@@ -125,22 +159,25 @@ class NewLaunchSniper(Strategy):
                 return t.price_usd
         return None
 
-    async def _confidence(self, mint: str, mcap_usd: float | None, age_s: float | None) -> ConfidenceScore:
-        """Gather measurable signals and score the launch 0-100.
+    async def _confidence(
+        self,
+        mint: str,
+        mcap_usd: float | None,
+        age_s: float | None,
+        *,
+        bonding_progress_pct: float | None = None,
+        reply_count: int | None = None,
+    ) -> ConfidenceScore:
+        """Score the launch 0-100 on pump.fun-native signals.
 
-        On-chain authority state (RPC) + demand flow (Helius) + market
-        context. Anything that can't be fetched counts as unknown (0
-        points) — never fabricated. The verdict is fully explainable and
-        gets written into the trade note.
+        Market cap + its VELOCITY (buy-pressure proxy) + bonding progress +
+        community + RPC authority state. Anything unmeasured counts as
+        unknown (0 points) — never fabricated. Velocity is the confirmation
+        gate: unknown on first sighting, so a launch can't be bought until
+        we've watched its cap climb. Fully explainable; the verdict is
+        written into the trade note.
         """
-        # Demand flow (buys vs sells, wallets, swaps).
-        buy_ratio = wallets = swaps = None
-        if self._helius is not None and self._helius.is_configured:
-            try:
-                act = await self._helius.get_token_activity(mint, limit=30)
-                buy_ratio, wallets, swaps = act.buy_ratio_pct, act.unique_wallets, act.swaps
-            except AppError:
-                pass  # unknown flow -> scored as 0, won't reach threshold
+        growth = self._growth_pct_per_min(mint, mcap_usd)
 
         # On-chain mint/freeze authority (rug / honeypot gates).
         mint_revoked = freeze_revoked = None
@@ -152,14 +189,14 @@ class NewLaunchSniper(Strategy):
             except AppError:
                 pass  # unknown authority -> 0 points (not a hard reject)
 
-        return score_launch(
+        return score_pumpfun_launch(
             mcap_usd=mcap_usd,
+            mcap_growth_pct_per_min=growth,
+            bonding_progress_pct=bonding_progress_pct,
+            reply_count=reply_count,
             age_s=age_s,
             mint_revoked=mint_revoked,
             freeze_revoked=freeze_revoked,
-            buy_ratio_pct=buy_ratio,
-            unique_wallets=wallets,
-            swaps=swaps,
             min_mcap_usd=self._min_mcap,
             max_mcap_usd=self._max_mcap,
             max_age_s=self._max_age_s,
@@ -171,8 +208,9 @@ class NewLaunchSniper(Strategy):
     ) -> list[EntrySignal]:
         """Fast path: launches pushed by the live stream (no REST latency).
 
-        The stream carries no reply counts, so the flow gate is the
-        traction check here — real buys or no entry.
+        The stream carries no reply/progress data, so the market-cap
+        velocity gate is the traction check here — it must be climbing
+        (confirmed across two readings) or no entry.
         """
         if self._stream is None:
             return []
@@ -234,7 +272,13 @@ class NewLaunchSniper(Strategy):
                 ):
                     continue
                 age_s = (now - coin.created_at).total_seconds()
-                verdict = await self._confidence(coin.mint, coin.usd_market_cap, age_s)
+                verdict = await self._confidence(
+                    coin.mint,
+                    coin.usd_market_cap,
+                    age_s,
+                    bonding_progress_pct=coin.bonding_progress_pct,
+                    reply_count=coin.reply_count,
+                )
                 if not verdict.approved:
                     continue  # scored too low / hard-rejected
                 signals.append(
@@ -267,6 +311,7 @@ class NewLaunchSniper(Strategy):
         return await super().current_price(mint)
 
     async def on_position_closed(self, mint: str) -> None:
+        self._first_seen.pop(mint, None)
         if self._stream is not None:
             await self._stream.unwatch(mint)
 

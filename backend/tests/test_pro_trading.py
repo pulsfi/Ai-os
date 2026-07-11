@@ -240,51 +240,62 @@ class StubRpc:
         return self._auth
 
 
-def fresh_launch_sniper(helius: object, rpc: object | None = None) -> NewLaunchSniper:
-    coins = [pump_coin("Fresh1", 10_000)]
-    return NewLaunchSniper(
-        StubPumpFun(coins), market=None, helius=helius,  # type: ignore[arg-type]
-        rpc=rpc or StubRpc(),
+# --- sniper: pump.fun-native CONFIRMATION entry --------------------------
+# The sniper no longer reads Helius flow (blind to bonding-curve trades).
+# It scores pump.fun-native signals and only buys a launch it has SEEN
+# climb — confirmed buy pressure, not a first-sighting guess.
+
+
+def fresh_launch_sniper(rpc: object | None = None) -> tuple[NewLaunchSniper, StubPumpFun]:
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None, helius=None,  # type: ignore[arg-type]
+        rpc=rpc or StubRpc(), confirm_window_s=0.0,
     )
+    return sniper, stub
 
 
-async def test_sniper_enters_on_high_confidence() -> None:
-    # Revoked authorities + strong broad buying -> score clears the bar.
-    sniper = fresh_launch_sniper(StubHelius(activity(buys=8, sells=2, wallets=7)))
-    signals = await sniper.find_entries(set(), 3)
+async def _enter_after_confirm(sniper: NewLaunchSniper, stub: StubPumpFun, second_mcap: float):
+    """First sighting only records; a second reading confirms the trend."""
+    await sniper.find_entries(set(), 3)
+    stub._coins = [pump_coin("Fresh1", second_mcap)]
+    return await sniper.find_entries(set(), 3)
+
+
+async def test_sniper_enters_on_confirmed_climb() -> None:
+    # Revoked authorities + a rising market cap -> confirmed buy pressure.
+    sniper, stub = fresh_launch_sniper()
+    signals = await _enter_after_confirm(sniper, stub, 12_000)
     assert len(signals) == 1
     assert "confidence" in signals[0].note
 
 
-async def test_sniper_skips_sell_pressure() -> None:
-    sniper = fresh_launch_sniper(StubHelius(activity(buys=2, sells=6, wallets=5)))
+async def test_sniper_never_buys_on_first_sighting() -> None:
+    # Even a strong launch is only recorded on first sight, never bought.
+    sniper, _ = fresh_launch_sniper()
     assert await sniper.find_entries(set(), 3) == []
 
 
-async def test_sniper_hard_rejects_single_wallet() -> None:
-    # 100% buys but one wallet = wash/whale -> hard reject regardless of ratio.
-    sniper = fresh_launch_sniper(StubHelius(activity(buys=6, sells=0, wallets=1)))
-    assert await sniper.find_entries(set(), 3) == []
+async def test_sniper_skips_flat_or_dumping_launch() -> None:
+    # Second reading is lower -> no buy pressure -> skip.
+    sniper, stub = fresh_launch_sniper()
+    assert await _enter_after_confirm(sniper, stub, 8_000) == []
 
 
 async def test_sniper_hard_rejects_active_mint_authority() -> None:
-    # Great flow, but the mint authority is still active -> rug gate fires.
-    sniper = fresh_launch_sniper(
-        StubHelius(activity(buys=9, sells=1, wallets=10)),
-        rpc=StubRpc(mint_auth="SomeAuthorityAddr"),
+    # Climbing cap, but the mint authority is still active -> rug gate fires.
+    sniper, stub = fresh_launch_sniper(rpc=StubRpc(mint_auth="SomeAuthorityAddr"))
+    assert await _enter_after_confirm(sniper, stub, 12_000) == []
+
+
+async def test_sniper_stays_out_without_market_cap() -> None:
+    """No market cap = can't measure demand = stay out (never fabricate)."""
+    stub = StubPumpFun([pump_coin("NoCap", None)])
+    sniper = NewLaunchSniper(
+        stub, market=None, helius=None,  # type: ignore[arg-type]
+        rpc=StubRpc(), confirm_window_s=0.0,
     )
-    assert await sniper.find_entries(set(), 3) == []
-
-
-async def test_sniper_skips_when_flow_lookup_fails() -> None:
-    """Can't verify demand -> no entry (reject on missing info)."""
-    sniper = fresh_launch_sniper(StubHelius(None))
-    assert await sniper.find_entries(set(), 3) == []
-
-
-async def test_sniper_without_flow_stays_out() -> None:
-    """No Helius = no demand signal = can't reach the confidence bar -> out."""
-    sniper = fresh_launch_sniper(None)
+    await sniper.find_entries(set(), 3)
     assert await sniper.find_entries(set(), 3) == []
 
 

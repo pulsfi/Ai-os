@@ -130,18 +130,21 @@ class _OkRpc:
 
 
 async def test_sniper_prefers_stream_and_watches_entries() -> None:
-    # 100 SOL mcap * $200 = $20,000 -> inside the band; strong flow -> score passes.
-    events = [LaunchEvent(mint="StreamMint", name="S", symbol="STRM", mcap_sol=100.0)]
-    stream = FakeStream(events)
+    # 100 SOL mcap * $200 = $20,000 -> inside the band. Confirmation entry:
+    # the first sighting only records; entry comes once the cap has climbed.
+    stream = FakeStream([LaunchEvent(mint="StreamMint", name="S", symbol="STRM", mcap_sol=100.0)])
     sniper = NewLaunchSniper(
         StubPumpFun([]), market=FakeMarket(), helius=_GoodHelius(), stream=stream,  # type: ignore[arg-type]
-        rpc=_OkRpc(),
+        rpc=_OkRpc(), confirm_window_s=0.0,
     )
+    assert await sniper.find_entries(set(), 3) == []  # first sighting -> record only
+    # Cap climbs 100 -> 110 SOL ($22,000): confirmed buy pressure.
+    stream._events = [LaunchEvent(mint="StreamMint", name="S", symbol="STRM", mcap_sol=110.0)]
     signals = await sniper.find_entries(set(), 3)
     assert len(signals) == 1
     assert signals[0].mint == "StreamMint"
     assert "stream-detected" in signals[0].note
-    assert signals[0].price_usd == pytest.approx(20_000 / 1_000_000_000)
+    assert signals[0].price_usd == pytest.approx(22_000 / 1_000_000_000)
     assert stream.watched == ["StreamMint"]  # live marks subscribed
 
 
@@ -155,12 +158,15 @@ async def test_sniper_stream_band_filter_applies() -> None:
 
 
 async def test_sniper_rest_fallback_still_works_with_stream() -> None:
-    """Stream empty (e.g. disconnected) -> the REST sweep still enters."""
-    coins = [pump_coin("RestMint", 10_000)]
+    """Stream empty (e.g. disconnected) -> the REST sweep still enters once
+    the launch confirms it's climbing."""
+    stub = StubPumpFun([pump_coin("RestMint", 10_000)])
     sniper = NewLaunchSniper(
-        StubPumpFun(coins), market=FakeMarket(), helius=_GoodHelius(),  # type: ignore[arg-type]
-        stream=FakeStream([]), rpc=_OkRpc(),
+        stub, market=FakeMarket(), helius=_GoodHelius(),  # type: ignore[arg-type]
+        stream=FakeStream([]), rpc=_OkRpc(), confirm_window_s=0.0,
     )
+    assert await sniper.find_entries(set(), 3) == []  # first sighting -> record only
+    stub._coins = [pump_coin("RestMint", 11_500)]     # cap climbs -> confirmed
     signals = await sniper.find_entries(set(), 3)
     assert [s.mint for s in signals] == ["RestMint"]
 
