@@ -42,6 +42,7 @@ export const qk = {
   bots: ["bots"] as const,
   botTrades: (botId: string | null) => ["bots", "trades", botId ?? "all"] as const,
   botPerformance: ["bots", "performance"] as const,
+  botTelemetry: ["bots", "telemetry"] as const,
   vaultDirs: ["vault", "dirs"] as const,
   vaultNotes: (dir: string) => ["vault", "notes", dir] as const,
   vaultNote: (path: string) => ["vault", "note", path] as const,
@@ -325,6 +326,15 @@ export function useBotPerformance() {
     queryKey: qk.botPerformance,
     queryFn: botsService.performance,
     refetchInterval: 30_000,
+  });
+}
+
+/** The sniper's live signals funnel: seen / rejected (+why) / executed. */
+export function useSniperTelemetry() {
+  return useQuery({
+    queryKey: qk.botTelemetry,
+    queryFn: botsService.telemetry,
+    refetchInterval: 10_000,
   });
 }
 

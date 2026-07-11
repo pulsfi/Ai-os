@@ -5,6 +5,7 @@ import { ExecutionLog } from "@/components/terminal-ui/execution-log";
 import { PageHeader } from "@/components/terminal-ui/page-header";
 import { BotFleetCard } from "@/components/trading/bot-fleet-card";
 import { ExecutionPanel } from "@/components/trading/execution-panel";
+import { SniperTelemetryCard } from "@/components/trading/sniper-telemetry-card";
 
 export const metadata = { title: "Launch Sniper" };
 
@@ -17,8 +18,9 @@ export default function SniperPage() {
         icon={Crosshair}
       />
       <FadeIn><BotFleetCard /></FadeIn>
-      <FadeIn delay={0.05}><ExecutionPanel /></FadeIn>
-      <FadeIn delay={0.1}><ExecutionLog /></FadeIn>
+      <FadeIn delay={0.05}><SniperTelemetryCard /></FadeIn>
+      <FadeIn delay={0.1}><ExecutionPanel /></FadeIn>
+      <FadeIn delay={0.15}><ExecutionLog /></FadeIn>
     </section>
   );
 }

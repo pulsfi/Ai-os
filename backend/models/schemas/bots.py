@@ -146,6 +146,32 @@ class BotPerformance(BaseModel):
     curve: list[EquityPoint] = []
 
 
+class RejectionRecord(BaseModel):
+    """One launch the sniper evaluated and turned down — with the reasons."""
+
+    ts: str
+    mint: str
+    symbol: str
+    score: float
+    reasons: list[str]
+    categories: list[str]
+
+
+class SniperTelemetry(BaseModel):
+    """The signals funnel: everything seen, why rejects rejected, what ran.
+
+    Answers 'why isn't it trading?' with evidence instead of guesses."""
+
+    bot_id: str = "sniper"
+    signals_detected: int = 0
+    signals_approved: int = 0
+    trades_executed: int = 0
+    rejected_recent: int = 0
+    avg_confidence: float | None = None
+    reject_reasons: dict[str, int] = {}
+    recent_rejections: list[RejectionRecord] = []
+
+
 class FactorInsight(BaseModel):
     """How one scoring factor differed between winning and losing entries."""
 

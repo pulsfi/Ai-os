@@ -393,8 +393,9 @@ def test_position_size_scales_with_confidence(tmp_path: Path) -> None:
     assert runner._position_size(100.0) == pytest.approx(42.0)  # 60 * 0.7
 
 
-async def test_expectancy_guard_pauses_bleeding_bot(tmp_path: Path) -> None:
-    """12 straight losers -> profit factor 0 -> entries pause (risk-off)."""
+async def test_risk_governor_halves_size_but_never_stops(tmp_path: Path) -> None:
+    """12 straight losers -> profit factor 0 -> the bot KEEPS trading, but
+    at half size (never pause trading on poor performance alone)."""
     ledger = BotLedger(tmp_path / "guard.db")
     for i in range(12):
         tid = ledger.open_trade("gbot", f"Mint{i}", f"SY{i}", 50.0, 1.0)
@@ -405,10 +406,8 @@ async def test_expectancy_guard_pauses_bleeding_bot(tmp_path: Path) -> None:
         take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
     )
     runner = BotRunner(config, PricePath([]), ledger)
-    note = runner._expectancy_guard()
-    assert note is not None and "risk-off" in note
-    # And the guard is surfaced + actually blocks new entries:
-    assert runner.status().risk_note is not None
+    assert runner._risk_governor() == 0.5
+    assert "risk-reduced" in (runner.status().risk_note or "")
 
     class Eager(Strategy):
         name = "eager"
@@ -417,6 +416,8 @@ async def test_expectancy_guard_pauses_bleeding_bot(tmp_path: Path) -> None:
             pass
 
         async def find_entries(self, held_mints, slots):
+            if "FreshMint" in held_mints or slots < 1:
+                return []
             return [EntrySignal("FreshMint", "FRS", 1.0, "t")]
 
         async def current_price(self, mint):
@@ -424,7 +425,28 @@ async def test_expectancy_guard_pauses_bleeding_bot(tmp_path: Path) -> None:
 
     runner._strategy = Eager()
     await runner.tick()
-    assert ledger.open_trades("gbot") == []  # no new positions while risk-off
+    opened = ledger.open_trades("gbot")
+    assert len(opened) == 1  # STILL trading
+    # size = $50 base x 0.7 cold-streak x 0.5 governor = $17.50
+    assert opened[0].usd_size == pytest.approx(17.5)
+
+
+async def test_sniper_telemetry_records_rejections_and_approvals() -> None:
+    """Every rejected launch is logged with the reason; approvals overwrite."""
+    sniper, stub = fresh_launch_sniper()
+    # First sighting: recorded only -> rejected as unconfirmed momentum.
+    assert await sniper.find_entries(set(), 3) == []
+    t = sniper.telemetry()
+    assert t["signals_detected"] == 1 and t["signals_approved"] == 0
+    assert t["reject_reasons"].get("weak_momentum") == 1
+    assert t["recent_rejections"][0]["mint"] == "Fresh1"
+    # Cap climbs -> the same mint now passes; its rejection is superseded.
+    stub._coins = [pump_coin("Fresh1", 12_000)]
+    signals = await sniper.find_entries(set(), 3)
+    assert [s.mint for s in signals] == ["Fresh1"]
+    t = sniper.telemetry()
+    assert t["signals_approved"] == 1 and t["rejected_recent"] == 0
+    assert t["avg_confidence"] is not None and t["avg_confidence"] > 55
 
 
 def test_insights_surface_factor_edges(tmp_path: Path) -> None:

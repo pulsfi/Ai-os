@@ -128,8 +128,11 @@ class NewLaunchSniper(Strategy):
         # caught on its pump, not diluted by its idle minutes.
         velocity_lookback_s: float = 90.0,
         # Whale/bundle X-ray: reject if the top-5 holders (excluding the
-        # bonding curve itself) own more than this share of supply.
-        max_top5_holder_pct: float = 30.0,
+        # bonding curve itself) own more than this share of supply. NB: on
+        # a seconds-old launch early buyers structurally hold big shares
+        # (~25% at $10k mcap is NORMAL), so this must only catch true
+        # domination — 30% choked off nearly every legitimate entry.
+        max_top5_holder_pct: float = 45.0,
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius  # kept for wiring; unused (blind to bonding curve)
@@ -151,6 +154,79 @@ class NewLaunchSniper(Strategy):
         # mint -> (checked_at, ok, note): concentration verdicts, short TTL
         # (distribution improves as more real buyers come in).
         self._conc_cache: dict[str, tuple[float, bool, str]] = {}
+        # Rejection telemetry: latest verdict per evaluated mint (bounded)
+        # plus monotonic totals — the evidence for threshold tuning, and the
+        # data behind the signals/rejections dashboard.
+        self._evals: dict[str, dict] = {}
+        self.signals_total = 0  # unique launches evaluated
+        self.approved_total = 0  # unique launches that passed every gate
+
+    @staticmethod
+    def _reject_category(reason: str) -> str:
+        """Map a human reject reason to a stable dashboard category."""
+        r = reason.lower()
+        if "bundle" in r or "distinct buyer" in r:
+            return "few_buyers"
+        if "buyer flow" in r or "breadth" in r:
+            return "no_flow_data"
+        if "dumped on" in r:
+            return "net_selling"
+        if "confirm" in r or "flat/falling" in r:
+            return "weak_momentum"
+        if "authority" in r:
+            return "rug_risk"
+        if "holder" in r:
+            return "whale_concentration"
+        if "floor" in r or "above the band" in r:
+            return "mcap_band"
+        if "below the" in r and "threshold" in r:
+            return "low_confidence"
+        return "other"
+
+    def _record_eval(
+        self, mint: str, symbol: str, score: float, approved: bool, reasons: list[str]
+    ) -> None:
+        """Latest verdict per mint. A mint that later passes overwrites its
+        earlier rejection, so the dashboard reflects final outcomes."""
+        prev = self._evals.get(mint)
+        if prev is None:
+            self.signals_total += 1
+            if len(self._evals) > 400:  # bounded: drop the oldest quarter
+                for k in list(self._evals)[:100]:
+                    del self._evals[k]
+        if approved and (prev is None or not prev["approved"]):
+            self.approved_total += 1
+        self._evals[mint] = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mint": mint,
+            "symbol": symbol,
+            "score": round(score, 1),
+            "approved": approved,
+            "reasons": reasons[:4],
+            "categories": sorted({self._reject_category(r) for r in reasons}),
+        }
+
+    def telemetry(self) -> dict:
+        """Signals seen, rejections by reason, approvals, avg confidence —
+        computed over the latest verdict of each recently evaluated mint."""
+        recs = list(self._evals.values())
+        rejected = [r for r in recs if not r["approved"]]
+        reason_counts: dict[str, int] = {}
+        for r in rejected:
+            for c in r["categories"]:
+                reason_counts[c] = reason_counts.get(c, 0) + 1
+        scores = [r["score"] for r in recs]
+        newest_rejects = sorted(rejected, key=lambda r: r["ts"], reverse=True)[:25]
+        return {
+            "signals_detected": self.signals_total,
+            "signals_approved": self.approved_total,
+            "rejected_recent": len(rejected),
+            "avg_confidence": round(sum(scores) / len(scores), 1) if scores else None,
+            "reject_reasons": dict(
+                sorted(reason_counts.items(), key=lambda kv: -kv[1])
+            ),
+            "recent_rejections": newest_rejects,
+        }
 
     async def _holders_ok(self, mint: str) -> tuple[bool, str]:
         """Whale/bundle X-ray from RPC top-holder accounts. Called ONLY for
@@ -322,11 +398,15 @@ class NewLaunchSniper(Strategy):
                 event.mint, mcap_usd, age_s,
                 unique_buyers=buyers, buys=buys, sells=sells,
             )
+            sym = event.symbol or event.mint[:6]
             if not verdict.approved:
+                self._record_eval(event.mint, sym, verdict.score, False, verdict.rejects)
                 continue  # scored too low / hard-rejected -> skip this launch
             holders_ok, holders_note = await self._holders_ok(event.mint)
             if not holders_ok:
+                self._record_eval(event.mint, sym, verdict.score, False, [holders_note])
                 continue  # concentrated supply — one dump wipes the position
+            self._record_eval(event.mint, sym, verdict.score, True, [])
             signals.append(
                 EntrySignal(
                     mint=event.mint,
@@ -381,11 +461,15 @@ class NewLaunchSniper(Strategy):
                     reply_count=coin.reply_count,
                     unique_buyers=buyers, buys=buys, sells=sells,
                 )
+                sym = coin.symbol or coin.mint[:6]
                 if not verdict.approved:
+                    self._record_eval(coin.mint, sym, verdict.score, False, verdict.rejects)
                     continue  # scored too low / hard-rejected
                 holders_ok, holders_note = await self._holders_ok(coin.mint)
                 if not holders_ok:
+                    self._record_eval(coin.mint, sym, verdict.score, False, [holders_note])
                     continue  # concentrated supply — one dump wipes the position
+                self._record_eval(coin.mint, sym, verdict.score, True, [])
                 signals.append(
                     EntrySignal(
                         mint=coin.mint,

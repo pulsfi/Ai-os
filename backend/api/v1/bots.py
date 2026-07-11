@@ -18,6 +18,7 @@ from models.schemas.bots import (
     BotPerformance,
     BotStatus,
     BotTrade,
+    SniperTelemetry,
 )
 
 router = APIRouter()
@@ -54,6 +55,14 @@ async def performance(bots: BotManagerDep) -> list[BotPerformance]:
     PnL, win rate, avg/best/worst trade. The evidence the Stage 5 gate
     will be judged on."""
     return bots.performance()
+
+
+@router.get("/telemetry", response_model=SniperTelemetry)
+async def telemetry(bots: BotManagerDep) -> SniperTelemetry:
+    """The sniper's live signals funnel: launches seen, rejections with the
+    exact reason (whale concentration, weak momentum, rug risk, …), trades
+    executed, and average confidence — why it is or isn't trading."""
+    return bots.sniper_telemetry()
 
 
 @router.get("/insights", response_model=BotInsights)

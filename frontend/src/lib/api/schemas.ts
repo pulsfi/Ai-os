@@ -381,6 +381,30 @@ export const botPerformanceSchema = z.object({
 export type BotPerformance = z.infer<typeof botPerformanceSchema>;
 export type EquityPoint = z.infer<typeof equityPointSchema>;
 
+export const rejectionRecordSchema = z.object({
+  ts: z.string(),
+  mint: z.string(),
+  symbol: z.string(),
+  score: z.number(),
+  reasons: z.array(z.string()),
+  categories: z.array(z.string()),
+});
+
+/** The sniper's signals funnel — why it is (or isn't) trading. */
+export const sniperTelemetrySchema = z.object({
+  bot_id: z.string(),
+  signals_detected: z.number(),
+  signals_approved: z.number(),
+  trades_executed: z.number(),
+  rejected_recent: z.number(),
+  avg_confidence: z.number().nullable(),
+  reject_reasons: z.record(z.string(), z.number()),
+  recent_rejections: z.array(rejectionRecordSchema),
+});
+
+export type SniperTelemetry = z.infer<typeof sniperTelemetrySchema>;
+export type RejectionRecord = z.infer<typeof rejectionRecordSchema>;
+
 export const resetResultSchema = z.object({
   wiped: z.number(),
   detail: z.string(),

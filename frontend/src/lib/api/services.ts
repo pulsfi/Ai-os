@@ -38,11 +38,13 @@ import {
   type HealthReport,
   type HistoryPoint,
   resetResultSchema,
+  sniperTelemetrySchema,
   type BotControlResult,
   type BotPerformance,
   type BotStatus,
   type BotTrade,
   type ResetResult,
+  type SniperTelemetry,
   type MarketStatus,
   type PaperSummary,
   type PaperTrade,
@@ -161,6 +163,10 @@ export const botsService = {
   /** GET /bots/performance — equity curves + per-strategy track record. */
   performance: (): Promise<BotPerformance[]> =>
     getValidated("/bots/performance", z.array(botPerformanceSchema)),
+
+  /** GET /bots/telemetry — the sniper's signals funnel (rejections + why). */
+  telemetry: (): Promise<SniperTelemetry> =>
+    getValidated("/bots/telemetry", sniperTelemetrySchema),
 
   /** GET /bots/trades — fleet-wide paper trade log, newest first. */
   allTrades: (limit = 50): Promise<BotTrade[]> =>

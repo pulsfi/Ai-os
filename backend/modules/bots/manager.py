@@ -30,6 +30,7 @@ from models.schemas.bots import (
     BotTrade,
     EquityPoint,
     FactorInsight,
+    SniperTelemetry,
 )
 from modules.bots.ledger import BotLedger
 from modules.bots.runner import BotRunner
@@ -330,6 +331,15 @@ class BotManager:
                 )
             )
         return results
+
+    def sniper_telemetry(self) -> SniperTelemetry:
+        """The sniper's signals funnel: seen / rejected (+why) / executed."""
+        runner = self._runners.get("sniper")
+        strat = runner._strategy if runner is not None else None
+        data = strat.telemetry() if hasattr(strat, "telemetry") else {}
+        stats = self._ledger.stats("sniper")
+        executed = int(stats["open_positions"] or 0) + int(stats["closed_trades"] or 0)
+        return SniperTelemetry(trades_executed=executed, **data)
 
     _FACTOR_RE = re.compile(r"([a-z_]+) ([0-9.]+)/([0-9.]+)")
 
