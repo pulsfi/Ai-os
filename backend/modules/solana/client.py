@@ -161,8 +161,14 @@ class RpcClient:
         return (await self.call("getTokenLargestAccounts", [mint]))["value"]
 
     async def get_token_authorities(self, mint: str) -> TokenAuthorities:
-        """Mint/freeze authority state — the primary on-chain rug signal."""
-        info = await self.call("getAccountInfo", [mint, {"encoding": "jsonParsed"}])
+        """Mint/freeze authority state — the primary on-chain rug signal.
+
+        `confirmed` commitment: the sniper checks mints SECONDS after they're
+        created; under the default (finalized) a brand-new mint often isn't
+        visible yet and scored as unknown, starving the confidence gate."""
+        info = await self.call(
+            "getAccountInfo", [mint, {"encoding": "jsonParsed", "commitment": "confirmed"}]
+        )
         parsed = (((info or {}).get("value") or {}).get("data") or {}).get("parsed", {}).get("info")
         if not parsed:
             raise SolanaRpcError(f"mint {mint} is not a parseable SPL token account")

@@ -20,6 +20,11 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # Fail the run on ANY error — a broken backend deploy must never
+            # report success (it did once: a malformed .env line made compose
+            # bail out silently and the backend ran a stale image for hours).
+            set -e
+
             cd ${{ secrets.VPS_APP_DIR }}
 
             git fetch origin
@@ -32,6 +37,23 @@ jobs:
             cp -r "04 Agents" "10 Memory" "12 Daily Notes" "00 Dashboard" backend/vault/ 2>/dev/null || true
 
             cd backend
+
+            # Heal .env: docker compose rejects the WHOLE file if one line is
+            # malformed (e.g. a space in a key name). Comment such lines out
+            # so the deploy proceeds, and print a masked hint (never values).
+            if [ -f .env ]; then
+              cp .env .env.bak
+              awk '{
+                if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/ || $0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/) print $0;
+                else print "# DISABLED (bad syntax - fix and re-add): " substr($0, 1, 12) "...";
+              }' .env.bak > .env
+              if ! cmp -s .env .env.bak; then
+                echo "WARNING: malformed line(s) in backend/.env were disabled:"
+                grep -n "^# DISABLED" .env || true
+              fi
+              rm .env.bak
+            fi
+
             docker compose up -d --build
 
             cd ../frontend

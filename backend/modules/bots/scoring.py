@@ -168,8 +168,11 @@ def score_pumpfun_launch(
     outside the band (no price yet, or already run up), and — when
     confirming — a launch that is flat or dumping.
 
-    Weights (max 100): mint 8, freeze 8, velocity 34, mcap-band 16,
-    bonding 16, replies 10, age 8.
+    Weights (max 100): mint 8, freeze 8, velocity 40, mcap-band 14,
+    bonding 12, replies 8, age 10. Velocity dominates because it's the one
+    signal that directly measures people buying RIGHT NOW; bonding/replies
+    are secondary (and unavailable on the fast stream path, so the gate
+    can't be starved by their absence).
     """
     factors: list[Factor] = []
     rejects: list[str] = []
@@ -193,12 +196,12 @@ def score_pumpfun_launch(
 
     # --- buy pressure: market-cap velocity (drives the decision) ---------
     if mcap_growth_pct_per_min is None:
-        factors.append(Factor("velocity", 0, 34, "awaiting confirmation"))
+        factors.append(Factor("velocity", 0, 40, "awaiting confirmation"))
         if require_growth_confirmation:
             rejects.append("no second reading yet — waiting to confirm it's climbing")
     else:
-        vel = _scaled(mcap_growth_pct_per_min, 1.0, 25.0, 34.0)
-        factors.append(Factor("velocity", vel, 34, f"{mcap_growth_pct_per_min:+.0f}%/min mcap"))
+        vel = _scaled(mcap_growth_pct_per_min, 1.0, 20.0, 40.0)
+        factors.append(Factor("velocity", vel, 40, f"{mcap_growth_pct_per_min:+.0f}%/min mcap"))
         if require_growth_confirmation and mcap_growth_pct_per_min <= 0:
             rejects.append(
                 f"mcap flat/falling ({mcap_growth_pct_per_min:+.0f}%/min) — no buy pressure"
@@ -207,7 +210,7 @@ def score_pumpfun_launch(
     # --- market context (hard band) --------------------------------------
     in_band = mcap_usd is not None and min_mcap_usd <= mcap_usd <= max_mcap_usd
     factors.append(
-        Factor("mcap", 16 if in_band else 0, 16, f"${mcap_usd:,.0f}" if mcap_usd else "unknown")
+        Factor("mcap", 14 if in_band else 0, 14, f"${mcap_usd:,.0f}" if mcap_usd else "unknown")
     )
     if mcap_usd is None or mcap_usd < min_mcap_usd:
         rejects.append("market cap below the floor — no real buyers yet")
@@ -215,21 +218,21 @@ def score_pumpfun_launch(
         rejects.append(f"market cap ${mcap_usd:,.0f} above the band — too late / priced in")
 
     # --- committed demand: bonding-curve progress ------------------------
-    bp = _scaled(bonding_progress_pct, 0.0, 20.0, 16.0)
+    bp = _scaled(bonding_progress_pct, 0.0, 20.0, 12.0)
     factors.append(
-        Factor("bonding", bp, 16,
+        Factor("bonding", bp, 12,
                f"{bonding_progress_pct:.0f}% to graduation" if bonding_progress_pct is not None else "unknown")
     )
 
     # --- community + freshness -------------------------------------------
-    rp = _scaled(reply_count, 0, 25, 10.0)
+    rp = _scaled(reply_count, 0, 25, 8.0)
     factors.append(
-        Factor("replies", rp, 10, f"{reply_count} replies" if reply_count is not None else "unknown")
+        Factor("replies", rp, 8, f"{reply_count} replies" if reply_count is not None else "unknown")
     )
     fresh = age_s is not None and age_s <= max_age_s
-    age_pts = _scaled(max_age_s - age_s, 0, max_age_s, 8.0) if fresh else 0.0
+    age_pts = _scaled(max_age_s - age_s, 0, max_age_s, 10.0) if fresh else 0.0
     factors.append(
-        Factor("age", age_pts, 8, f"{int(age_s)}s old" if age_s is not None else "unknown")
+        Factor("age", age_pts, 10, f"{int(age_s)}s old" if age_s is not None else "unknown")
     )
 
     score = round(sum(f.points for f in factors), 1)

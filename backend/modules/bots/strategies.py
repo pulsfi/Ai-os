@@ -16,6 +16,7 @@ market-cap change — recorded honestly in each trade's entry_note.
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -109,9 +110,14 @@ class NewLaunchSniper(Strategy):
         # signals; enter only at/above this. A launch we haven't yet seen
         # climb can't reach it, so the bot stays out rather than guessing.
         min_confidence: float = 55.0,
-        # Minimum seconds between the first sighting and an entry — the
-        # window over which we confirm the market cap is actually climbing.
-        confirm_window_s: float = 6.0,
+        # Minimum seconds between two readings before we trust the trend —
+        # the window over which we confirm the market cap is actually
+        # climbing. One 5s tick after detection is enough: fast, not blind.
+        confirm_window_s: float = 4.0,
+        # Velocity looks at the most recent readings only (not the average
+        # since first sighting), so a coin that idles and THEN pumps is
+        # caught on its pump, not diluted by its idle minutes.
+        velocity_lookback_s: float = 90.0,
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius  # kept for wiring; unused (blind to bonding curve)
@@ -122,30 +128,33 @@ class NewLaunchSniper(Strategy):
         self._max_mcap = max_mcap_usd
         self._min_confidence = min_confidence
         self._confirm_window_s = confirm_window_s
-        # mint -> (monotonic ts, mcap_usd) of first sighting, for velocity.
-        self._first_seen: dict[str, tuple[float, float]] = {}
+        self._lookback_s = velocity_lookback_s
+        # mint -> recent (monotonic ts, mcap_usd) readings, for velocity.
+        self._sightings: dict[str, deque[tuple[float, float]]] = {}
 
     def _growth_pct_per_min(self, mint: str, mcap_usd: float | None) -> float | None:
-        """Market-cap growth since first sighting, %/min — the buy-pressure
-        proxy. None until we have a second reading ≥confirm_window_s later,
-        which is exactly what makes entry a CONFIRMATION rather than a guess."""
+        """Market-cap growth over the recent lookback, %/min — the
+        buy-pressure proxy. None until a second reading ≥confirm_window_s
+        after the first, which is exactly what makes entry a CONFIRMATION
+        rather than a guess."""
         now = time.perf_counter()  # high-res: monotonic() is ~15ms-coarse on Windows
         # Prune stale trackers so the dict can't grow without bound.
-        if len(self._first_seen) > 512:
+        if len(self._sightings) > 512:
             cutoff = now - self._max_age_s * 2
-            self._first_seen = {
-                m: v for m, v in self._first_seen.items() if v[0] >= cutoff
+            self._sightings = {
+                m: dq for m, dq in self._sightings.items() if dq and dq[-1][0] >= cutoff
             }
         if mcap_usd is None or mcap_usd <= 0:
             return None
-        prev = self._first_seen.get(mint)
-        if prev is None:
-            self._first_seen[mint] = (now, mcap_usd)
-            return None  # first sighting — unconfirmed by design
-        t0, m0 = prev
+        dq = self._sightings.setdefault(mint, deque(maxlen=32))
+        dq.append((now, mcap_usd))
+        # Only the recent window counts: drop readings older than lookback.
+        while len(dq) > 1 and now - dq[0][0] > self._lookback_s:
+            dq.popleft()
+        t0, m0 = dq[0]
         dt = now - t0
         if dt <= 0 or dt < self._confirm_window_s or m0 <= 0:
-            return None  # too soon to trust a trend
+            return None  # first sighting / too soon to trust a trend
         return (mcap_usd - m0) / m0 / (dt / 60.0) * 100.0
 
     async def _sol_usd(self) -> float | None:
@@ -311,7 +320,7 @@ class NewLaunchSniper(Strategy):
         return await super().current_price(mint)
 
     async def on_position_closed(self, mint: str) -> None:
-        self._first_seen.pop(mint, None)
+        self._sightings.pop(mint, None)
         if self._stream is not None:
             await self._stream.unwatch(mint)
 
