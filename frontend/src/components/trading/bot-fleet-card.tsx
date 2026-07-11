@@ -12,6 +12,7 @@ import {
   Activity,
   AlertTriangle,
   Cpu,
+  Loader2,
   Play,
   RotateCcw,
   ScrollText,
@@ -29,6 +30,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -247,44 +256,48 @@ const FIELDS: {
   { key: "stop_loss_pct", label: "Stop loss", min: 1, max: 50, step: 1, unit: "%" },
   { key: "trail_after_pct", label: "Trail after", min: 1, max: 100, step: 1, unit: "%" },
   { key: "trail_drop_pct", label: "Trail drop", min: 1, max: 50, step: 1, unit: "%" },
+  { key: "break_even_at_pct", label: "Break-even at", min: 1, max: 100, step: 1, unit: "%" },
   { key: "exit_slippage_bps", label: "Exit slippage", min: 0, max: 1000, step: 5, unit: "bps" },
   { key: "reentry_cooldown_s", label: "Re-entry cooldown", min: 0, max: 3600, step: 30, unit: "s" },
 ];
 
 function BotConfigSheet({ bot, onClose }: { bot: BotStatus | null; onClose: () => void }) {
   return (
-    <Sheet open={bot !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full overflow-hidden sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>Tune · {bot?.config.name}</SheetTitle>
-          <SheetDescription>
-            Paper-mode parameters. Changes apply live and persist across restarts.
-          </SheetDescription>
-        </SheetHeader>
+    <Dialog open={bot !== null} onOpenChange={(open) => !open && onClose()}>
+      {/* Fixed max-height with a flex column: header/footer stay put, only
+          the body between them scrolls. Responsive: 95% on mobile, capped
+          at ~640px on desktop. p-0 so header/footer own their own padding. */}
+      <DialogContent className="flex max-h-[90vh] w-[95vw] max-w-[640px] flex-col gap-0 overflow-hidden p-0">
         {/* keyed remount seeds fresh initial state per bot — no effect needed */}
         {bot && <BotConfigForm key={bot.config.id} bot={bot} onClose={onClose} />}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }) {
   const update = useUpdateBotConfig();
-  const [values, setValues] = React.useState<Record<string, number>>(() =>
-    Object.fromEntries(FIELDS.map((f) => [f.key, Number(bot.config[f.key] ?? f.min)])),
+  const initial = React.useMemo(
+    () => Object.fromEntries(FIELDS.map((f) => [f.key, Number(bot.config[f.key] ?? f.min)])),
+    [bot],
   );
+  const [values, setValues] = React.useState<Record<string, number>>(initial);
   const [oneShot, setOneShot] = React.useState<boolean>(bot.config.one_shot_per_mint);
 
-  function save() {
-    const payload: Record<string, number | boolean> = {};
+  // The payload of only-changed fields; also powers the dirty check so Save
+  // is disabled until something actually differs from the saved config.
+  const payload = React.useMemo(() => {
+    const p: Record<string, number | boolean> = {};
     for (const f of FIELDS) {
-      if (values[f.key] !== bot.config[f.key]) payload[f.key] = values[f.key];
+      if (values[f.key] !== initial[f.key]) p[f.key] = values[f.key];
     }
-    if (oneShot !== bot.config.one_shot_per_mint) payload.one_shot_per_mint = oneShot;
-    if (Object.keys(payload).length === 0) {
-      toast.info("No changes to save");
-      return;
-    }
+    if (oneShot !== bot.config.one_shot_per_mint) p.one_shot_per_mint = oneShot;
+    return p;
+  }, [values, oneShot, initial, bot]);
+  const dirty = Object.keys(payload).length > 0;
+
+  function save() {
+    if (!dirty) return;
     update.mutate(
       { botId: bot.config.id, update: payload },
       {
@@ -298,63 +311,107 @@ function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }
     );
   }
 
+  function cancel() {
+    // Revert any unsaved changes, then close.
+    setValues(initial);
+    setOneShot(bot.config.one_shot_per_mint);
+    onClose();
+  }
+
   return (
-    <div className="space-y-5 px-4 py-4">
-      {FIELDS.map((f) => (
-        <div key={f.key} className="space-y-1.5">
-          <label className="flex items-baseline justify-between text-xs">
-            <span className="font-medium">{f.label}</span>
-            <span className="font-mono text-primary">
-              {f.unit === "$" && "$"}
-              {values[f.key]}
-              {f.unit !== "$" && f.unit ? ` ${f.unit}` : ""}
-            </span>
-          </label>
-          <input
-            type="range"
-            min={f.min}
-            max={f.max}
-            step={f.step}
-            value={values[f.key]}
-            onChange={(e) =>
-              setValues((v) => ({ ...v, [f.key]: Number(e.target.value) }))
-            }
-            className="w-full accent-primary"
-          />
-        </div>
-      ))}
+    <>
+      {/* Fixed header */}
+      <DialogHeader className="border-b px-6 py-4">
+        <DialogTitle>Tune · {bot.config.name}</DialogTitle>
+        <DialogDescription>
+          Paper-mode parameters. Changes apply live and persist across restarts.
+        </DialogDescription>
+      </DialogHeader>
 
-      {/* one trade per coin — the anti-repeat-loss control */}
-      <button
-        type="button"
-        onClick={() => setOneShot((s) => !s)}
-        className="flex w-full items-center justify-between rounded-lg border p-3 text-left text-xs"
-      >
-        <span>
-          <span className="font-medium">One trade per coin</span>
-          <span className="block text-muted-foreground">
-            never re-enter a coin — avoids repeat losses on one launch
-          </span>
-        </span>
-        <span
-          className={cn(
-            "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-            oneShot ? "bg-primary" : "bg-muted",
-          )}
+      {/* Scrollable body — the only part that scrolls when content overflows */}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        {FIELDS.map((f) => (
+          <div key={f.key} className="space-y-2">
+            <div className="flex items-baseline justify-between text-sm">
+              <label htmlFor={`tune-${f.key}`} className="font-medium">
+                {f.label}
+              </label>
+              <span className="font-mono text-primary tabular-nums">
+                {f.unit === "$" && "$"}
+                {values[f.key]}
+                {f.unit !== "$" && f.unit ? ` ${f.unit}` : ""}
+              </span>
+            </div>
+            <input
+              id={`tune-${f.key}`}
+              type="range"
+              min={f.min}
+              max={f.max}
+              step={f.step}
+              value={values[f.key]}
+              onChange={(e) =>
+                setValues((v) => ({ ...v, [f.key]: Number(e.target.value) }))
+              }
+              className="block w-full accent-primary"
+            />
+          </div>
+        ))}
+
+        {/* one trade per coin — the anti-repeat-loss control */}
+        <button
+          type="button"
+          onClick={() => setOneShot((s) => !s)}
+          className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left text-sm"
         >
+          <span>
+            <span className="font-medium">One trade per coin</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              never re-enter a coin — avoids repeat losses on one launch
+            </span>
+          </span>
           <span
+            role="switch"
+            aria-checked={oneShot}
             className={cn(
-              "absolute top-0.5 size-4 rounded-full bg-white transition-transform",
-              oneShot ? "translate-x-4" : "translate-x-0.5",
+              "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+              oneShot ? "bg-primary" : "bg-muted",
             )}
-          />
-        </span>
-      </button>
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 size-5 rounded-full bg-white transition-transform",
+                oneShot ? "translate-x-[22px]" : "translate-x-0.5",
+              )}
+            />
+          </span>
+        </button>
+      </div>
 
-      <Button className="w-full" disabled={update.isPending} onClick={save}>
-        {update.isPending ? "Saving…" : "Save changes"}
-      </Button>
-    </div>
+      {/* Fixed footer */}
+      <DialogFooter className="border-t px-6 py-4">
+        <Button
+          variant="outline"
+          className="h-[44px] min-w-[110px] rounded-lg"
+          disabled={update.isPending}
+          onClick={cancel}
+        >
+          Cancel
+        </Button>
+        <Button
+          className="h-[44px] w-[150px] rounded-lg"
+          disabled={!dirty || update.isPending}
+          onClick={save}
+        >
+          {update.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" /> Saving…
+            </>
+          ) : (
+            "Save Changes"
+          )}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
