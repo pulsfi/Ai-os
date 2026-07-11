@@ -143,6 +143,10 @@ def score_pumpfun_launch(
     min_mcap_usd: float,
     max_mcap_usd: float,
     max_age_s: float,
+    unique_buyers: int | None = None,  # distinct wallets buying (stream flow)
+    buys: int | None = None,
+    sells: int | None = None,
+    min_buyers: int = 3,
     min_confidence: float = 55.0,
     require_growth_confirmation: bool = True,
 ) -> ConfidenceScore:
@@ -165,14 +169,16 @@ def score_pumpfun_launch(
     stateless research card (a single snapshot has no velocity).
 
     Hard rejects: active mint/freeze authority (rug/honeypot), market cap
-    outside the band (no price yet, or already run up), and — when
-    confirming — a launch that is flat or dumping.
+    outside the band (no price yet, or already run up), a launch that is
+    flat or dumping (when confirming), net selling, and — the anti-bundle
+    gate — measured flow with fewer than min_buyers DISTINCT buyers: a dev
+    pumping with bundled wallets fakes velocity but not breadth. Unknown
+    breadth (no trades seen / REST path) scores 0 without hard-rejecting.
 
-    Weights (max 100): mint 8, freeze 8, velocity 40, mcap-band 14,
-    bonding 12, replies 8, age 10. Velocity dominates because it's the one
-    signal that directly measures people buying RIGHT NOW; bonding/replies
-    are secondary (and unavailable on the fast stream path, so the gate
-    can't be starved by their absence).
+    Weights (max 100): mint 8, freeze 8, velocity 34, buyers 18,
+    mcap-band 12, bonding 10, replies 4, age 6. Velocity + buyers dominate:
+    together they demand a cap that is climbing AND many real wallets
+    pushing it.
     """
     factors: list[Factor] = []
     rejects: list[str] = []
@@ -196,21 +202,34 @@ def score_pumpfun_launch(
 
     # --- buy pressure: market-cap velocity (drives the decision) ---------
     if mcap_growth_pct_per_min is None:
-        factors.append(Factor("velocity", 0, 40, "awaiting confirmation"))
+        factors.append(Factor("velocity", 0, 34, "awaiting confirmation"))
         if require_growth_confirmation:
             rejects.append("no second reading yet — waiting to confirm it's climbing")
     else:
-        vel = _scaled(mcap_growth_pct_per_min, 1.0, 20.0, 40.0)
-        factors.append(Factor("velocity", vel, 40, f"{mcap_growth_pct_per_min:+.0f}%/min mcap"))
+        vel = _scaled(mcap_growth_pct_per_min, 1.0, 20.0, 34.0)
+        factors.append(Factor("velocity", vel, 34, f"{mcap_growth_pct_per_min:+.0f}%/min mcap"))
         if require_growth_confirmation and mcap_growth_pct_per_min <= 0:
             rejects.append(
                 f"mcap flat/falling ({mcap_growth_pct_per_min:+.0f}%/min) — no buy pressure"
             )
 
+    # --- demand breadth: distinct buyers (the anti-bundle gate) ----------
+    ub = _scaled(unique_buyers, 2, 12, 18.0)
+    factors.append(
+        Factor("buyers", ub, 18,
+               f"{unique_buyers} buyers" if unique_buyers is not None else "unknown")
+    )
+    if unique_buyers is not None and unique_buyers < min_buyers:
+        rejects.append(
+            f"only {unique_buyers} distinct buyer(s) — bundle/wash pattern, not demand"
+        )
+    if buys is not None and sells is not None and sells > buys:
+        rejects.append(f"net selling ({buys} buys / {sells} sells) — being dumped on")
+
     # --- market context (hard band) --------------------------------------
     in_band = mcap_usd is not None and min_mcap_usd <= mcap_usd <= max_mcap_usd
     factors.append(
-        Factor("mcap", 14 if in_band else 0, 14, f"${mcap_usd:,.0f}" if mcap_usd else "unknown")
+        Factor("mcap", 12 if in_band else 0, 12, f"${mcap_usd:,.0f}" if mcap_usd else "unknown")
     )
     if mcap_usd is None or mcap_usd < min_mcap_usd:
         rejects.append("market cap below the floor — no real buyers yet")
@@ -218,21 +237,21 @@ def score_pumpfun_launch(
         rejects.append(f"market cap ${mcap_usd:,.0f} above the band — too late / priced in")
 
     # --- committed demand: bonding-curve progress ------------------------
-    bp = _scaled(bonding_progress_pct, 0.0, 20.0, 12.0)
+    bp = _scaled(bonding_progress_pct, 0.0, 20.0, 10.0)
     factors.append(
-        Factor("bonding", bp, 12,
+        Factor("bonding", bp, 10,
                f"{bonding_progress_pct:.0f}% to graduation" if bonding_progress_pct is not None else "unknown")
     )
 
     # --- community + freshness -------------------------------------------
-    rp = _scaled(reply_count, 0, 25, 8.0)
+    rp = _scaled(reply_count, 0, 25, 4.0)
     factors.append(
-        Factor("replies", rp, 8, f"{reply_count} replies" if reply_count is not None else "unknown")
+        Factor("replies", rp, 4, f"{reply_count} replies" if reply_count is not None else "unknown")
     )
     fresh = age_s is not None and age_s <= max_age_s
-    age_pts = _scaled(max_age_s - age_s, 0, max_age_s, 10.0) if fresh else 0.0
+    age_pts = _scaled(max_age_s - age_s, 0, max_age_s, 6.0) if fresh else 0.0
     factors.append(
-        Factor("age", age_pts, 10, f"{int(age_s)}s old" if age_s is not None else "unknown")
+        Factor("age", age_pts, 6, f"{int(age_s)}s old" if age_s is not None else "unknown")
     )
 
     score = round(sum(f.points for f in factors), 1)

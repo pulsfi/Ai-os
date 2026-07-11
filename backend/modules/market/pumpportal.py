@@ -56,6 +56,11 @@ class LaunchStream:
         self._trade_mcap: dict[str, tuple[float, float]] = {}  # mint -> (mcapSol, mono)
         self._watched: set[str] = set()  # held positions (pinned)
         self._auto: dict[str, float] = {}  # candidate mint -> received_at
+        # Demand breadth per candidate, from the trade feed itself: how many
+        # DISTINCT wallets are buying, and the buy/sell tally. This is the
+        # anti-bundle gate — a dev pumping with bundled wallets shows huge
+        # velocity but few real buyers.
+        self._flow: dict[str, dict] = {}  # mint -> {buyers:set, buys:int, sells:int}
         self._watch_window_s = watch_window_s
         self._listeners: list[Callable[[], None]] = []
         self._task: asyncio.Task[None] | None = None
@@ -140,6 +145,17 @@ class LaunchStream:
             if isinstance(mcap, (int, float)):
                 self.trades_seen += 1
                 self._trade_mcap[mint] = (float(mcap), time.monotonic())
+                if mint in self._auto or mint in self._watched:
+                    rec = self._flow.setdefault(
+                        mint, {"buyers": set(), "buys": 0, "sells": 0}
+                    )
+                    if tx_type == "buy":
+                        rec["buys"] += 1
+                        trader = msg.get("traderPublicKey")
+                        if isinstance(trader, str) and len(rec["buyers"]) < 256:
+                            rec["buyers"].add(trader)
+                    else:
+                        rec["sells"] += 1
                 # A candidate traded — its velocity just changed; wake the
                 # sniper NOW instead of waiting out the tick interval.
                 if mint in self._auto:
@@ -181,6 +197,7 @@ class LaunchStream:
             del self._auto[m]
             if m not in self._watched:
                 self._trade_mcap.pop(m, None)
+                self._flow.pop(m, None)
         gone = [m for m in expired if m not in self._watched]
         if gone:
             self._send_soon({"method": "unsubscribeTokenTrade", "keys": gone})
@@ -203,6 +220,14 @@ class LaunchStream:
             return None
         return entry[0]
 
+    def flow(self, mint: str) -> tuple[int, int, int] | None:
+        """(unique_buyers, buys, sells) observed on the candidate's trade
+        feed — demand BREADTH, the anti-bundle signal. None before any trade."""
+        rec = self._flow.get(mint)
+        if rec is None:
+            return None
+        return (len(rec["buyers"]), rec["buys"], rec["sells"])
+
     async def watch(self, mint: str) -> None:
         """Pin this mint's trade feed (live price marks for an open position)."""
         if mint in self._watched:
@@ -221,6 +246,7 @@ class LaunchStream:
         if mint in self._auto:
             return  # still a live candidate — keep its feed and mark
         self._trade_mcap.pop(mint, None)
+        self._flow.pop(mint, None)
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.send(

@@ -186,6 +186,9 @@ class NewLaunchSniper(Strategy):
         *,
         bonding_progress_pct: float | None = None,
         reply_count: int | None = None,
+        unique_buyers: int | None = None,
+        buys: int | None = None,
+        sells: int | None = None,
     ) -> ConfidenceScore:
         """Score the launch 0-100 on pump.fun-native signals.
 
@@ -223,6 +226,9 @@ class NewLaunchSniper(Strategy):
             min_mcap_usd=self._min_mcap,
             max_mcap_usd=self._max_mcap,
             max_age_s=self._max_age_s,
+            unique_buyers=unique_buyers,
+            buys=buys,
+            sells=sells,
             min_confidence=self._min_confidence,
         )
 
@@ -262,7 +268,14 @@ class NewLaunchSniper(Strategy):
             if not (self._min_mcap <= mcap_usd <= self._max_mcap):
                 continue
             age_s = _time.monotonic() - event.received_at
-            verdict = await self._confidence(event.mint, mcap_usd, age_s)
+            # Demand breadth from the trade feed (anti-bundle gate).
+            flow_fn = getattr(self._stream, "flow", None)
+            fl = flow_fn(event.mint) if callable(flow_fn) else None
+            buyers, buys, sells = fl if fl is not None else (None, None, None)
+            verdict = await self._confidence(
+                event.mint, mcap_usd, age_s,
+                unique_buyers=buyers, buys=buys, sells=sells,
+            )
             if not verdict.approved:
                 continue  # scored too low / hard-rejected -> skip this launch
             signals.append(

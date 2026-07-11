@@ -83,6 +83,25 @@ def test_stream_auto_watch_expires_but_held_mints_survive() -> None:
     assert stream._trade_mcap["HeldOne"] == (2.0, now)  # position mark kept
 
 
+def test_stream_tracks_demand_breadth_per_candidate() -> None:
+    """The trade feed carries the buyer's wallet: distinct-buyer counting is
+    the free anti-bundle signal (no API calls)."""
+    stream = LaunchStream()
+    stream._handle(json.dumps({"txType": "create", "mint": "M1", "marketCapSol": 28.0}))
+    assert stream.flow("M1") is None  # no trades seen yet
+    for wallet in ("walletA", "walletB", "walletA", "walletC"):
+        stream._handle(json.dumps(
+            {"txType": "buy", "mint": "M1", "marketCapSol": 30.0, "traderPublicKey": wallet}
+        ))
+    stream._handle(json.dumps(
+        {"txType": "sell", "mint": "M1", "marketCapSol": 29.0, "traderPublicKey": "walletD"}
+    ))
+    assert stream.flow("M1") == (3, 4, 1)  # 3 distinct buyers, 4 buys, 1 sell
+    # Untracked mints accumulate nothing.
+    stream._handle(json.dumps({"txType": "buy", "mint": "Rando", "marketCapSol": 9.0}))
+    assert stream.flow("Rando") is None
+
+
 def test_stream_candidate_trades_wake_the_sniper() -> None:
     """A candidate's trade fires listeners (velocity changed -> tick NOW)."""
     stream = LaunchStream()

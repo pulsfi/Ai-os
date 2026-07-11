@@ -99,6 +99,36 @@ def test_pump_below_floor_rejected() -> None:
     assert any("floor" in r.lower() for r in v.rejects)
 
 
+def test_pump_bundle_pattern_hard_rejects() -> None:
+    """Perfect velocity but 2 wallets doing all the buying = a bundled dev
+    pump, not demand — the exact pattern behind the -60/-70% instant rugs."""
+    v = pump(mcap_growth_pct_per_min=50.0, unique_buyers=2, buys=30, sells=0)
+    assert v.approved is False
+    assert any("bundle" in r.lower() for r in v.rejects)
+
+
+def test_pump_net_selling_hard_rejects() -> None:
+    v = pump(unique_buyers=8, buys=5, sells=9)
+    assert v.approved is False
+    assert any("dumped on" in r for r in v.rejects)
+
+
+def test_pump_broad_demand_approves() -> None:
+    """Climbing cap + many distinct buyers = the real thing."""
+    v = pump(unique_buyers=10, buys=25, sells=4)
+    assert v.approved is True
+    assert not v.rejects
+
+
+def test_pump_unknown_breadth_scores_zero_without_reject() -> None:
+    """REST-path coins have no stream flow: unknown breadth must not
+    hard-reject (velocity still gates), it just earns 0 of the 18 points."""
+    v = pump()  # unique_buyers defaults to None
+    assert not any("bundle" in r.lower() for r in v.rejects)
+    buyers = next(f for f in v.factors if f.name == "buyers")
+    assert buyers.points == 0 and buyers.detail == "unknown"
+
+
 def test_pump_snapshot_mode_scores_without_velocity() -> None:
     """Research-card mode: unknown velocity doesn't hard-reject, it just
     scores 0 on that factor so the card can still show a partial verdict."""
