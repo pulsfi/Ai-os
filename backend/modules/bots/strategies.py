@@ -165,6 +165,10 @@ class NewLaunchSniper(Strategy):
     def _reject_category(reason: str) -> str:
         """Map a human reject reason to a stable dashboard category."""
         r = reason.lower()
+        # Holder notes say "whale/bundle risk" — match them before the
+        # buyer-count wording so they don't mislabel as few_buyers.
+        if "holder" in r:
+            return "whale_concentration"
         if "bundle" in r or "distinct buyer" in r:
             return "few_buyers"
         if "buyer flow" in r or "breadth" in r:
@@ -175,8 +179,6 @@ class NewLaunchSniper(Strategy):
             return "weak_momentum"
         if "authority" in r:
             return "rug_risk"
-        if "holder" in r:
-            return "whale_concentration"
         if "floor" in r or "above the band" in r:
             return "mcap_band"
         if "below the" in r and "threshold" in r:
