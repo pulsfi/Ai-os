@@ -169,10 +169,12 @@ class BotManager:
             # Apply any saved user tuning on top of the defaults.
             if self._overrides.get(config.id):
                 config = config.model_copy(update=self._overrides[config.id])
-            # slippage/cap now live on each BotConfig (per-bot, tunable).
-            self._runners[config.id] = BotRunner(
-                config, strategies[config.strategy], self._ledger
-            )
+            strategy = strategies[config.strategy]
+            # The execution threshold lives on the config (tunable,
+            # persisted) — push it into scoring strategies at build time.
+            if hasattr(strategy, "_min_confidence"):
+                strategy._min_confidence = config.min_confidence
+            self._runners[config.id] = BotRunner(config, strategy, self._ledger)
         logger.info("Bot fleet built: %s (PAPER MODE)", ", ".join(self._runners))
 
     # -- config tuning ------------------------------------------------------
@@ -200,6 +202,9 @@ class BotManager:
             runner.config = runner.config.model_copy(update=changes)
             self._overrides[bot_id] = {**self._overrides.get(bot_id, {}), **changes}
             self._persist_overrides()
+            # Execution threshold applies LIVE — the strategy gates on it.
+            if "min_confidence" in changes and hasattr(runner._strategy, "_min_confidence"):
+                runner._strategy._min_confidence = changes["min_confidence"]
             logger.info("bot %s config updated: %s", bot_id, changes)
         return runner.status()
 

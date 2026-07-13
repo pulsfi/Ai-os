@@ -80,6 +80,30 @@ export function SniperTelemetryCard() {
               />
             </div>
 
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="outline" className="gap-1.5 font-normal">
+                threshold
+                <span className="font-mono text-primary">
+                  {q.data.execution_threshold ?? 55}/100
+                </span>
+              </Badge>
+              <Badge
+                variant={q.data.stream_connected ? "default" : "destructive"}
+                className="font-normal"
+              >
+                stream {q.data.stream_connected ? "connected" : "down"}
+              </Badge>
+              <Badge
+                variant={q.data.flow_healthy ? "default" : "secondary"}
+                className="font-normal"
+                title="When trade data isn't flowing, the buyer-breadth gate degrades to a scored factor so high-confidence launches can still trade."
+              >
+                {q.data.flow_healthy
+                  ? "buyer data flowing"
+                  : "no buyer data — score gate deciding"}
+              </Badge>
+            </div>
+
             {Object.keys(q.data.reject_reasons).length > 0 && (
               <div>
                 <p className="mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">

@@ -187,7 +187,9 @@ class NewLaunchSniper(Strategy):
         self, mint: str, symbol: str, score: float, approved: bool, reasons: list[str]
     ) -> None:
         """Latest verdict per mint. A mint that later passes overwrites its
-        earlier rejection, so the dashboard reflects final outcomes."""
+        earlier rejection, so the dashboard reflects final outcomes. Every
+        NEW rejection (or verdict change) is also logged with score,
+        threshold, risk status, and the exact reasons — never silent."""
         prev = self._evals.get(mint)
         if prev is None:
             self.signals_total += 1
@@ -196,15 +198,25 @@ class NewLaunchSniper(Strategy):
                     del self._evals[k]
         if approved and (prev is None or not prev["approved"]):
             self.approved_total += 1
-        self._evals[mint] = {
+        record = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "mint": mint,
             "symbol": symbol,
             "score": round(score, 1),
+            "threshold": self._min_confidence,
             "approved": approved,
             "reasons": reasons[:4],
             "categories": sorted({self._reject_category(r) for r in reasons}),
         }
+        if prev is None or prev["approved"] != approved or prev["reasons"] != record["reasons"]:
+            logger.info(
+                "sniper %s %s (%s): score=%.1f threshold=%.0f risk=%s%s",
+                "APPROVED" if approved else "rejected",
+                symbol, mint[:8], score, self._min_confidence,
+                "approved" if approved else "rejected",
+                "" if approved else f" reasons={'; '.join(reasons[:4])}",
+            )
+        self._evals[mint] = record
 
     def telemetry(self) -> dict:
         """Signals seen, rejections by reason, approvals, avg confidence —
@@ -217,11 +229,17 @@ class NewLaunchSniper(Strategy):
                 reason_counts[c] = reason_counts.get(c, 0) + 1
         scores = [r["score"] for r in recs]
         newest_rejects = sorted(rejected, key=lambda r: r["ts"], reverse=True)[:25]
+        stats_fn = getattr(self._stream, "stats", None) if self._stream else None
+        stream = stats_fn() if callable(stats_fn) else {}
         return {
             "signals_detected": self.signals_total,
             "signals_approved": self.approved_total,
             "rejected_recent": len(rejected),
             "avg_confidence": round(sum(scores) / len(scores), 1) if scores else None,
+            "execution_threshold": self._min_confidence,
+            "stream_connected": bool(stream.get("connected", False)),
+            "flow_healthy": bool(stream.get("flow_healthy", False)),
+            "stream_trades_seen": int(stream.get("trades_seen", 0)),
             "reject_reasons": dict(
                 sorted(reason_counts.items(), key=lambda kv: -kv[1])
             ),
@@ -349,10 +367,21 @@ class NewLaunchSniper(Strategy):
             buys=buys,
             sells=sells,
             min_confidence=self._min_confidence,
-            # No breadth data = no entry. The first live session proved the
-            # bundle rugs came in exactly through unknown-breadth entries.
-            require_breadth=True,
+            # Breadth is a hard gate WHILE trade data is demonstrably
+            # flowing (a mint with zero observed trades then truly has no
+            # buyers). But when the stream provably can't deliver per-token
+            # trades (PumpPortal caps/limits — live telemetry showed 32/32
+            # launches at avg 57.5 conf all dying on this one gate), the
+            # requirement degrades: unknown breadth scores 0/18 and the
+            # execution threshold decides. Strong climbers trade; weak
+            # ones still reject. Never a silent, unsatisfiable gate.
+            require_breadth=self._flow_available(),
         )
+
+    def _flow_available(self) -> bool:
+        """Is per-token trade data actually arriving on the stream?"""
+        fn = getattr(self._stream, "flow_healthy", None) if self._stream else None
+        return bool(fn()) if callable(fn) else False
 
     async def _stream_candidates(
         self, held_mints: set[str], slots: int

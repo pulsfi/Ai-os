@@ -48,6 +48,9 @@ class BotConfig(BaseModel):
     # One shot per coin: once traded, NEVER re-enter that mint (there's an
     # ocean of other coins). On for launch bots; off for liquid majors.
     one_shot_per_mint: bool = False
+    # Execution threshold: minimum confidence score (0-100) a scored entry
+    # must reach. Only strategies that score (the sniper) use it.
+    min_confidence: float = Field(default=55.0, ge=0, le=100)
 
 
 class BotConfigUpdate(BaseModel):
@@ -68,6 +71,7 @@ class BotConfigUpdate(BaseModel):
     max_gain_pct: float | None = Field(default=None, gt=0, le=100000)
     reentry_cooldown_s: float | None = Field(default=None, ge=0, le=86400)
     one_shot_per_mint: bool | None = None
+    min_confidence: float | None = Field(default=None, ge=0, le=100)
 
 
 class BotStatus(BaseModel):
@@ -153,6 +157,7 @@ class RejectionRecord(BaseModel):
     mint: str
     symbol: str
     score: float
+    threshold: float | None = None
     reasons: list[str]
     categories: list[str]
 
@@ -168,6 +173,12 @@ class SniperTelemetry(BaseModel):
     trades_executed: int = 0
     rejected_recent: int = 0
     avg_confidence: float | None = None
+    execution_threshold: float | None = None
+    # Stream health — when flow_healthy is False, the breadth gate degrades
+    # to a scored factor instead of an unsatisfiable hard requirement.
+    stream_connected: bool = False
+    flow_healthy: bool = False
+    stream_trades_seen: int = 0
     reject_reasons: dict[str, int] = {}
     recent_rejections: list[RejectionRecord] = []
 

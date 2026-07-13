@@ -303,6 +303,8 @@ export const botConfigSchema = z.object({
   max_gain_pct: z.number(),
   reentry_cooldown_s: z.number(),
   one_shot_per_mint: z.boolean(),
+  // Execution threshold (0-100): minimum confidence a scored entry needs.
+  min_confidence: z.number().optional(),
 });
 
 export const botStatusSchema = z.object({
@@ -386,6 +388,7 @@ export const rejectionRecordSchema = z.object({
   mint: z.string(),
   symbol: z.string(),
   score: z.number(),
+  threshold: z.number().nullable().optional(),
   reasons: z.array(z.string()),
   categories: z.array(z.string()),
 });
@@ -398,6 +401,10 @@ export const sniperTelemetrySchema = z.object({
   trades_executed: z.number(),
   rejected_recent: z.number(),
   avg_confidence: z.number().nullable(),
+  execution_threshold: z.number().nullable().optional(),
+  stream_connected: z.boolean().optional(),
+  flow_healthy: z.boolean().optional(),
+  stream_trades_seen: z.number().optional(),
   reject_reasons: z.record(z.string(), z.number()),
   recent_rejections: z.array(rejectionRecordSchema),
 });

@@ -68,6 +68,18 @@ class LaunchStream:
         self.connected = False
         self.events_seen = 0
         self.trades_seen = 0
+        self._last_trade_at: float | None = None  # monotonic, any subscribed mint
+
+    def flow_healthy(self, max_age_s: float = 120.0) -> bool:
+        """True while per-token trade data is demonstrably flowing (a trade
+        event arrived recently). When PumpPortal stops honoring trade
+        subscriptions (rate limits, plan caps), this goes False — the signal
+        for gates that depend on flow data to degrade instead of starving."""
+        return (
+            self.connected
+            and self._last_trade_at is not None
+            and time.monotonic() - self._last_trade_at <= max_age_s
+        )
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -144,6 +156,7 @@ class LaunchStream:
             mcap = msg.get("marketCapSol")
             if isinstance(mcap, (int, float)):
                 self.trades_seen += 1
+                self._last_trade_at = time.monotonic()
                 self._trade_mcap[mint] = (float(mcap), time.monotonic())
                 if mint in self._auto or mint in self._watched:
                     rec = self._flow.setdefault(
@@ -258,6 +271,7 @@ class LaunchStream:
             "connected": self.connected,
             "events_seen": self.events_seen,
             "trades_seen": self.trades_seen,
+            "flow_healthy": self.flow_healthy(),
             "watched": len(self._watched),
             "candidates": len(self._auto),
         }

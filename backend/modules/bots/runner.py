@@ -300,10 +300,20 @@ class BotRunner:
         held_symbols = {t.symbol.strip().lower() for t in open_trades}
         for signal in await self._strategy.find_entries(blocked, slots):
             sym = signal.symbol.strip().lower()
-            # Skip names already traded (copycat relaunch) or held right now.
+            # Skip names already traded (copycat relaunch) or held right now —
+            # logged, never silent: an approved signal that doesn't become an
+            # order must always say why.
             if self.config.one_shot_per_mint and sym in self._seen_symbols:
+                logger.info(
+                    "bot %s skipped approved %s: symbol already traded (one-shot)",
+                    self.config.id, signal.symbol,
+                )
                 continue
             if sym and sym in held_symbols:
+                logger.info(
+                    "bot %s skipped approved %s: same symbol held right now",
+                    self.config.id, signal.symbol,
+                )
                 continue
             trade_id = self._ledger.open_trade(
                 bot_id=self.config.id,

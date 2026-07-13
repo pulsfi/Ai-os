@@ -251,6 +251,7 @@ const FIELDS: {
   unit: string;
 }[] = [
   { key: "usd_per_trade", label: "Position size", min: 1, max: 200, step: 1, unit: "$" },
+  { key: "min_confidence", label: "Execution threshold", min: 0, max: 100, step: 1, unit: "/100" },
   { key: "max_open_positions", label: "Max positions", min: 1, max: 10, step: 1, unit: "" },
   { key: "take_profit_pct", label: "Take profit", min: 1, max: 100, step: 1, unit: "%" },
   { key: "stop_loss_pct", label: "Stop loss", min: 1, max: 50, step: 1, unit: "%" },

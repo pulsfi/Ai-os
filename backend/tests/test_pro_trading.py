@@ -470,3 +470,78 @@ def test_insights_surface_factor_edges(tmp_path: Path) -> None:
     buyers = next(f for f in result.factors if f.name == "buyers")
     assert buyers.winners_avg == 15.0 and buyers.losers_avg == 2.0
     assert buyers.edge == 13.0
+
+
+# --- flow-aware breadth gate + execution threshold ------------------------
+
+
+async def test_sniper_trades_on_score_when_flow_data_unavailable() -> None:
+    """Live incident regression: PumpPortal stopped delivering per-token
+    trades and EVERY launch (avg 57.5 conf, some 75+) died on 'no buyer
+    flow observed'. When flow is provably unavailable, breadth degrades to
+    a scored 0 and the execution threshold decides — strong climbers trade."""
+    from tests.test_bots import FlowStubStream
+
+    class NoFlowStream(FlowStubStream):
+        def flow(self, mint: str) -> None:
+            return None  # stream can't deliver per-token trades
+
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None, helius=None,  # type: ignore[arg-type]
+        rpc=StubRpc(), confirm_window_s=0.0,
+        stream=NoFlowStream(),  # type: ignore[arg-type]
+    )
+    assert await sniper.find_entries(set(), 3) == []  # first sighting records
+    stub._coins = [pump_coin("Fresh1", 12_000)]  # confirmed climber
+    signals = await sniper.find_entries(set(), 3)
+    assert [s.mint for s in signals] == ["Fresh1"]
+
+
+async def test_sniper_requires_breadth_while_flow_is_healthy() -> None:
+    """When trade data IS flowing, a mint with zero observed trades truly
+    has no buyers — the hard reject stays."""
+    from tests.test_bots import FlowStubStream
+
+    class HealthyButSilent(FlowStubStream):
+        def flow(self, mint: str) -> None:
+            return None  # no trades for THIS mint
+
+        def flow_healthy(self, max_age_s: float = 120.0) -> bool:
+            return True  # ...while trades flow in general
+
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None, helius=None,  # type: ignore[arg-type]
+        rpc=StubRpc(), confirm_window_s=0.0,
+        stream=HealthyButSilent(),  # type: ignore[arg-type]
+    )
+    await sniper.find_entries(set(), 3)
+    stub._coins = [pump_coin("Fresh1", 12_000)]
+    assert await sniper.find_entries(set(), 3) == []
+    reasons = sniper.telemetry()["recent_rejections"][0]["reasons"]
+    assert any("buyer flow" in r for r in reasons)
+
+
+async def test_execution_threshold_is_respected() -> None:
+    """A raised threshold rejects the same launch as low-confidence — and
+    the rejection record carries score AND threshold (never silent)."""
+    from tests.test_bots import FlowStubStream
+
+    class NoFlowStream(FlowStubStream):
+        def flow(self, mint: str) -> None:
+            return None
+
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None, helius=None,  # type: ignore[arg-type]
+        rpc=StubRpc(), confirm_window_s=0.0, min_confidence=95.0,
+        stream=NoFlowStream(),  # type: ignore[arg-type]
+    )
+    await sniper.find_entries(set(), 3)
+    stub._coins = [pump_coin("Fresh1", 12_000)]
+    assert await sniper.find_entries(set(), 3) == []  # 95 bar: nothing passes
+    rec = sniper.telemetry()["recent_rejections"][0]
+    assert rec["threshold"] == 95.0
+    assert rec["score"] < 95.0
+    assert sniper.telemetry()["reject_reasons"].get("low_confidence") == 1
