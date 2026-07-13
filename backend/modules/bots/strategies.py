@@ -154,12 +154,47 @@ class NewLaunchSniper(Strategy):
         # mint -> (checked_at, ok, note): concentration verdicts, short TTL
         # (distribution improves as more real buyers come in).
         self._conc_cache: dict[str, tuple[float, bool, str]] = {}
+        # mint -> (checked_at, ok, note): Helius finalist breadth verdicts.
+        self._helius_flow_cache: dict[str, tuple[float, bool, str | None]] = {}
         # Rejection telemetry: latest verdict per evaluated mint (bounded)
         # plus monotonic totals — the evidence for threshold tuning, and the
         # data behind the signals/rejections dashboard.
         self._evals: dict[str, dict] = {}
         self.signals_total = 0  # unique launches evaluated
         self.approved_total = 0  # unique launches that passed every gate
+
+    async def _breadth_backstop(self, mint: str) -> tuple[bool, str | None]:
+        """Second chance at the anti-bundle gate when the stream had no
+        per-token flow: ONE cached Helius call per would-be entry (Helius
+        indexes pump.fun bonding trades within ~1-2 min, and entries happen
+        at 24-124s). Measured bundle/dump pattern -> veto; unindexed or
+        unavailable -> allow with unknown breadth (never an unsatisfiable
+        gate). Cost: ~one call per approved finalist, not per candidate."""
+        if self._helius is None or not getattr(self._helius, "is_configured", False):
+            return True, None
+        now = time.perf_counter()
+        hit = self._helius_flow_cache.get(mint)
+        if hit is not None and now - hit[0] < 60.0:
+            return hit[1], hit[2]
+        ok: bool = True
+        note: str | None = None
+        try:
+            act = await self._helius.get_token_activity(mint, limit=30)
+            if act.swaps >= 3:  # indexed with enough activity to judge
+                if act.unique_wallets < 3:
+                    ok = False
+                    note = f"helius flow: only {act.unique_wallets} wallet(s) — bundle/wash pattern"
+                elif act.sells > act.buys:
+                    ok = False
+                    note = f"helius flow: net selling ({act.buys} buys / {act.sells} sells)"
+                else:
+                    note = f"helius {act.unique_wallets}w {act.buys}b/{act.sells}s"
+        except AppError:
+            pass  # unavailable -> honest unknown, entry stands on its score
+        if len(self._helius_flow_cache) > 512:
+            self._helius_flow_cache.clear()
+        self._helius_flow_cache[mint] = (now, ok, note)
+        return ok, note
 
     @staticmethod
     def _reject_category(reason: str) -> str:
@@ -173,7 +208,7 @@ class NewLaunchSniper(Strategy):
             return "few_buyers"
         if "buyer flow" in r or "breadth" in r:
             return "no_flow_data"
-        if "dumped on" in r:
+        if "dumped on" in r or "net selling" in r:
             return "net_selling"
         if "confirm" in r or "flat/falling" in r:
             return "weak_momentum"
@@ -437,6 +472,14 @@ class NewLaunchSniper(Strategy):
             if not holders_ok:
                 self._record_eval(event.mint, sym, verdict.score, False, [holders_note])
                 continue  # concentrated supply — one dump wipes the position
+            extra = ""
+            if buyers is None:  # stream had no flow — try the Helius backstop
+                b_ok, b_note = await self._breadth_backstop(event.mint)
+                if not b_ok:
+                    self._record_eval(event.mint, sym, verdict.score, False, [b_note or ""])
+                    continue
+                if b_note:
+                    extra = f", {b_note}"
             self._record_eval(event.mint, sym, verdict.score, True, [])
             signals.append(
                 EntrySignal(
@@ -445,7 +488,7 @@ class NewLaunchSniper(Strategy):
                     price_usd=mcap_usd / _PUMP_SUPPLY,
                     note=(
                         f"stream-detected {int(age_s)}s ago, mcap ${mcap_usd:,.0f}, "
-                        f"{verdict.note()}, {holders_note} (price=mcap/1B)"
+                        f"{verdict.note()}, {holders_note}{extra} (price=mcap/1B)"
                     ),
                     confidence=verdict.score,
                 )
@@ -500,6 +543,14 @@ class NewLaunchSniper(Strategy):
                 if not holders_ok:
                     self._record_eval(coin.mint, sym, verdict.score, False, [holders_note])
                     continue  # concentrated supply — one dump wipes the position
+                extra = ""
+                if buyers is None:  # stream had no flow — try the Helius backstop
+                    b_ok, b_note = await self._breadth_backstop(coin.mint)
+                    if not b_ok:
+                        self._record_eval(coin.mint, sym, verdict.score, False, [b_note or ""])
+                        continue
+                    if b_note:
+                        extra = f", {b_note}"
                 self._record_eval(coin.mint, sym, verdict.score, True, [])
                 signals.append(
                     EntrySignal(
@@ -509,7 +560,7 @@ class NewLaunchSniper(Strategy):
                         note=(
                             f"new launch {int(age_s)}s old, "
                             f"mcap ${coin.usd_market_cap:,.0f}, {coin.reply_count} replies, "
-                            f"{verdict.note()}, {holders_note} (price=mcap/1B)"
+                            f"{verdict.note()}, {holders_note}{extra} (price=mcap/1B)"
                         ),
                         confidence=verdict.score,
                     )

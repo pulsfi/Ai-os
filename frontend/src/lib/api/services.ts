@@ -48,6 +48,7 @@ import {
   type MarketStatus,
   type PaperSummary,
   type PaperTrade,
+  type ProfitCapture,
   type PumpCoin,
   type SystemInfo,
   alertSchema,
@@ -201,11 +202,16 @@ export const botsService = {
       stop_loss_pct: number;
       trail_after_pct: number;
       trail_drop_pct: number;
+      break_even_at_pct: number;
+      stall_exit_s: number;
+      stall_min_gain_pct: number;
+      min_confidence: number;
       interval_s: number;
       exit_slippage_bps: number;
       max_gain_pct: number;
       reentry_cooldown_s: number;
       one_shot_per_mint: boolean;
+      profit_capture: ProfitCapture;
     }>,
   ): Promise<BotStatus> =>
     patchValidated(`/bots/${encodeURIComponent(botId)}/config`, update, botStatusSchema),

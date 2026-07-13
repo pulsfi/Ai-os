@@ -545,3 +545,118 @@ async def test_execution_threshold_is_respected() -> None:
     assert rec["threshold"] == 95.0
     assert rec["score"] < 95.0
     assert sniper.telemetry()["reject_reasons"].get("low_confidence") == 1
+
+
+# --- stall exit + Helius finalist backstop ---------------------------------
+
+
+async def test_stall_exit_cuts_failed_impulse_flat(tmp_path: Path) -> None:
+    """Live evidence (46 trades): stop-losses cost -$117 while other exits
+    were ~positive. An entry that never moves is a failed impulse — exit
+    ~flat at the time stop, don't bleed to -18%."""
+    import asyncio
+
+    config = BotConfig(
+        id="stall", name="Stall", strategy="pricepath", description="t",
+        interval_s=0.05, usd_per_trade=100.0, max_open_positions=1,
+        take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
+        stall_exit_s=1.0, stall_min_gain_pct=3.0,
+    )
+    runner = BotRunner(
+        config, PricePath([1.01, 1.01]), BotLedger(tmp_path / "st.db"),
+        exit_slippage_bps=0, max_gain_pct=1_000_000.0,
+    )
+    await runner.tick()  # opens at 1.0
+    await asyncio.sleep(1.2)  # let the hold age past stall_exit_s
+    await runner.tick()  # +1% after >1s, never reached +3% -> stall exit
+    trade = runner._ledger.trades("stall", 1)[0]
+    assert trade.status == "closed"
+    assert "stall-exit" in (trade.exit_note or "")
+    assert abs(trade.pnl_pct or 99.0) < 2.0  # ~flat, not a -18% bleed
+
+
+async def test_stall_exit_spares_moving_positions(tmp_path: Path) -> None:
+    """A position that has shown life (peak >= min gain) is never stalled —
+    the trailing/break-even logic owns it from there."""
+    import asyncio
+
+    config = BotConfig(
+        id="mover", name="Mover", strategy="pricepath", description="t",
+        interval_s=0.05, usd_per_trade=100.0, max_open_positions=1,
+        take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
+        trail_after_pct=15.0, trail_drop_pct=8.0,
+        stall_exit_s=1.0, stall_min_gain_pct=3.0,
+    )
+    runner = BotRunner(
+        config, PricePath([1.08, 1.08]), BotLedger(tmp_path / "mv.db"),
+        exit_slippage_bps=0, max_gain_pct=1_000_000.0,
+    )
+    await runner.tick()  # opens
+    await asyncio.sleep(1.2)
+    await runner.tick()  # +8% > 3% min gain -> alive, no stall
+    assert runner.status().open_positions == 1
+
+
+async def test_helius_backstop_vetoes_bundle_finalist() -> None:
+    """Stream has no flow, but Helius (which indexes pump.fun trades after
+    ~1-2min) shows 2 wallets doing all the buying — the finalist is vetoed."""
+    from tests.test_bots import FlowStubStream
+
+    class NoFlowStream(FlowStubStream):
+        def flow(self, mint: str) -> None:
+            return None
+
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None,  # type: ignore[arg-type]
+        helius=StubHelius(activity(buys=20, sells=0, wallets=2)),
+        rpc=StubRpc(), confirm_window_s=0.0,
+        stream=NoFlowStream(),  # type: ignore[arg-type]
+    )
+    await sniper.find_entries(set(), 3)
+    stub._coins = [pump_coin("Fresh1", 12_000)]
+    assert await sniper.find_entries(set(), 3) == []
+    reasons = sniper.telemetry()["recent_rejections"][0]["reasons"]
+    assert any("bundle/wash" in r for r in reasons)
+
+
+async def test_helius_backstop_allows_broad_finalist() -> None:
+    from tests.test_bots import FlowStubStream
+
+    class NoFlowStream(FlowStubStream):
+        def flow(self, mint: str) -> None:
+            return None
+
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None,  # type: ignore[arg-type]
+        helius=StubHelius(activity(buys=20, sells=3, wallets=12)),
+        rpc=StubRpc(), confirm_window_s=0.0,
+        stream=NoFlowStream(),  # type: ignore[arg-type]
+    )
+    await sniper.find_entries(set(), 3)
+    stub._coins = [pump_coin("Fresh1", 12_000)]
+    signals = await sniper.find_entries(set(), 3)
+    assert [s.mint for s in signals] == ["Fresh1"]
+    assert "helius 12w" in signals[0].note  # breadth evidence in the log
+
+
+async def test_helius_backstop_unavailable_is_honest_unknown() -> None:
+    """Helius down/unindexed -> the entry stands on its score (never an
+    unsatisfiable gate), exactly like the stream-flow degradation."""
+    from tests.test_bots import FlowStubStream
+
+    class NoFlowStream(FlowStubStream):
+        def flow(self, mint: str) -> None:
+            return None
+
+    stub = StubPumpFun([pump_coin("Fresh1", 10_000)])
+    sniper = NewLaunchSniper(
+        stub, market=None,  # type: ignore[arg-type]
+        helius=StubHelius(None),  # raises ExternalServiceError
+        rpc=StubRpc(), confirm_window_s=0.0,
+        stream=NoFlowStream(),  # type: ignore[arg-type]
+    )
+    await sniper.find_entries(set(), 3)
+    stub._coins = [pump_coin("Fresh1", 12_000)]
+    assert [s.mint for s in await sniper.find_entries(set(), 3)] == ["Fresh1"]

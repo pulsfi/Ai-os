@@ -48,11 +48,27 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WidgetError } from "@/components/dashboard/widget-error";
+import { Input } from "@/components/ui/input";
 import { useBotControl, useBotTrades, useUpdateBotConfig } from "@/hooks/use-backend";
 import { useFleetLive } from "@/hooks/use-fleet-live";
 import { formatPct, formatPrice, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { BotStatus } from "@/lib/api/schemas";
+import type { BotStatus, ProfitCapture } from "@/lib/api/schemas";
+
+/** Mirrors the backend's default Dynamic Profit Capture ladder. */
+const DEFAULT_PROFIT_CAPTURE: ProfitCapture = {
+  enabled: false,
+  tiers: [
+    { gain_pct: 5, sell_pct: 10 }, { gain_pct: 10, sell_pct: 10 },
+    { gain_pct: 25, sell_pct: 20 }, { gain_pct: 50, sell_pct: 10 },
+    { gain_pct: 100, sell_pct: 15 }, { gain_pct: 250, sell_pct: 10 },
+    { gain_pct: 500, sell_pct: 10 }, { gain_pct: 1000, sell_pct: 5 },
+    { gain_pct: 2000, sell_pct: 10 },
+  ],
+  base_trail_drop_pct: 15,
+  min_trail_drop_pct: 4,
+  decay_after_s: 300,
+};
 
 function StateBadge({ state }: { state: BotStatus["state"] }) {
   if (state === "running") {
@@ -258,6 +274,7 @@ const FIELDS: {
   { key: "trail_after_pct", label: "Trail after", min: 1, max: 100, step: 1, unit: "%" },
   { key: "trail_drop_pct", label: "Trail drop", min: 1, max: 50, step: 1, unit: "%" },
   { key: "break_even_at_pct", label: "Break-even at", min: 1, max: 100, step: 1, unit: "%" },
+  { key: "stall_exit_s", label: "Stall exit", min: 15, max: 600, step: 15, unit: "s" },
   { key: "exit_slippage_bps", label: "Exit slippage", min: 0, max: 1000, step: 5, unit: "bps" },
   { key: "reentry_cooldown_s", label: "Re-entry cooldown", min: 0, max: 3600, step: 30, unit: "s" },
 ];
@@ -282,19 +299,25 @@ function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }
     () => Object.fromEntries(FIELDS.map((f) => [f.key, Number(bot.config[f.key] ?? f.min)])),
     [bot],
   );
+  const initialPc = React.useMemo<ProfitCapture>(
+    () => bot.config.profit_capture ?? DEFAULT_PROFIT_CAPTURE,
+    [bot],
+  );
   const [values, setValues] = React.useState<Record<string, number>>(initial);
   const [oneShot, setOneShot] = React.useState<boolean>(bot.config.one_shot_per_mint);
+  const [pc, setPc] = React.useState<ProfitCapture>(initialPc);
 
   // The payload of only-changed fields; also powers the dirty check so Save
   // is disabled until something actually differs from the saved config.
   const payload = React.useMemo(() => {
-    const p: Record<string, number | boolean> = {};
+    const p: Record<string, number | boolean | ProfitCapture> = {};
     for (const f of FIELDS) {
       if (values[f.key] !== initial[f.key]) p[f.key] = values[f.key];
     }
     if (oneShot !== bot.config.one_shot_per_mint) p.one_shot_per_mint = oneShot;
+    if (JSON.stringify(pc) !== JSON.stringify(initialPc)) p.profit_capture = pc;
     return p;
-  }, [values, oneShot, initial, bot]);
+  }, [values, oneShot, pc, initial, initialPc, bot]);
   const dirty = Object.keys(payload).length > 0;
 
   function save() {
@@ -316,6 +339,7 @@ function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }
     // Revert any unsaved changes, then close.
     setValues(initial);
     setOneShot(bot.config.one_shot_per_mint);
+    setPc(initialPc);
     onClose();
   }
 
@@ -357,6 +381,148 @@ function BotConfigForm({ bot, onClose }: { bot: BotStatus; onClose: () => void }
             />
           </div>
         ))}
+
+        {/* Dynamic Profit Capture — tiered scale-out replaces fixed TP */}
+        <div className="space-y-3 rounded-lg border p-3">
+          <button
+            type="button"
+            onClick={() => setPc((p) => ({ ...p, enabled: !p.enabled }))}
+            className="flex w-full items-center justify-between gap-3 text-left text-sm"
+          >
+            <span>
+              <span className="font-medium">Profit Capture</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                sell slices at each profit tier, trail the rest — replaces the
+                fixed take-profit while enabled
+              </span>
+            </span>
+            <span
+              role="switch"
+              aria-checked={pc.enabled}
+              className={cn(
+                "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+                pc.enabled ? "bg-primary" : "bg-muted",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 size-5 rounded-full bg-white transition-transform",
+                  pc.enabled ? "translate-x-[22px]" : "translate-x-0.5",
+                )}
+              />
+            </span>
+          </button>
+
+          {pc.enabled && (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Profit tiers — at each gain, sell this % of the original position
+                </p>
+                {pc.tiers.map((t, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="w-6 text-muted-foreground">+</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={2000}
+                      value={t.gain_pct}
+                      onChange={(e) =>
+                        setPc((p) => ({
+                          ...p,
+                          tiers: p.tiers.map((x, j) =>
+                            j === i
+                              ? { ...x, gain_pct: Math.min(2000, Math.max(1, Number(e.target.value) || 1)) }
+                              : x,
+                          ),
+                        }))
+                      }
+                      className="h-8 w-20 font-mono"
+                    />
+                    <span className="text-muted-foreground">% gain → sell</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={t.sell_pct}
+                      onChange={(e) =>
+                        setPc((p) => ({
+                          ...p,
+                          tiers: p.tiers.map((x, j) =>
+                            j === i
+                              ? { ...x, sell_pct: Math.min(100, Math.max(1, Number(e.target.value) || 1)) }
+                              : x,
+                          ),
+                        }))
+                      }
+                      className="h-8 w-16 font-mono"
+                    />
+                    <span className="text-muted-foreground">%</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="ml-auto h-7 px-2 text-muted-foreground"
+                      aria-label={`Remove tier ${t.gain_pct}%`}
+                      onClick={() =>
+                        setPc((p) => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i) }))
+                      }
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() =>
+                    setPc((p) => {
+                      const last = p.tiers[p.tiers.length - 1];
+                      const gain = Math.min(2000, last ? last.gain_pct * 2 : 5);
+                      return { ...p, tiers: [...p.tiers, { gain_pct: gain, sell_pct: 10 }] };
+                    })
+                  }
+                >
+                  + Add tier
+                </Button>
+                {pc.tiers.reduce((s, t) => s + t.sell_pct, 0) > 100 && (
+                  <p className="text-xs text-amber-400">
+                    Tiers sell more than 100% — later tiers will close whatever remains.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    ["base_trail_drop_pct", "Trail start %", "give-back allowed after the first tier"],
+                    ["min_trail_drop_pct", "Trail min %", "tightest give-back on big runners"],
+                    ["decay_after_s", "Decay after s", "tighten further when no new tier by then"],
+                  ] as const
+                ).map(([key, label, hint]) => (
+                  <div key={key} title={hint}>
+                    <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                      {label}
+                    </p>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={pc[key]}
+                      onChange={(e) =>
+                        setPc((p) => ({ ...p, [key]: Math.max(1, Number(e.target.value) || 1) }))
+                      }
+                      className="h-8 font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Max hold time uses this bot&apos;s existing max-hold setting. Stop-loss,
+                stall exit, and rug protections still close positions immediately.
+              </p>
+            </>
+          )}
+        </div>
 
         {/* one trade per coin — the anti-repeat-loss control */}
         <button

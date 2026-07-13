@@ -78,6 +78,48 @@ class BotLedger:
             )
             return int(cur.lastrowid or 0)
 
+    def partial_close(
+        self, trade_id: int, slice_usd: float, exit_price: float, exit_note: str
+    ) -> int | None:
+        """Realize part of an open position (Dynamic Profit Capture).
+
+        Books the sold slice as its OWN closed trade row (so stats, equity
+        curves, and profit factor see every realized slice honestly) and
+        shrinks the open runner's usd_size by the slice. Returns the new
+        closed row's id, or None if the trade isn't open / the slice is
+        larger than what remains."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM bot_trades WHERE id = ? AND status = 'open'",
+                (trade_id,),
+            ).fetchone()
+            if row is None or slice_usd <= 0 or slice_usd > row["usd_size"] + 1e-9:
+                logger.warning("partial_close: invalid slice for trade %s", trade_id)
+                return None
+            entry_price = row["entry_price"]
+            pnl_pct = (
+                (exit_price - entry_price) / entry_price * 100 if entry_price else 0.0
+            )
+            pnl_usd = slice_usd * pnl_pct / 100
+            cur = conn.execute(
+                """INSERT INTO bot_trades
+                   (bot_id, mint, symbol, usd_size, entry_price, entry_ts,
+                    exit_price, exit_ts, pnl_usd, pnl_pct, status,
+                    entry_note, exit_note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?)""",
+                (
+                    row["bot_id"], row["mint"], row["symbol"],
+                    round(slice_usd, 4), entry_price, row["entry_ts"],
+                    exit_price, _now_iso(), round(pnl_usd, 4), round(pnl_pct, 2),
+                    row["entry_note"], exit_note,
+                ),
+            )
+            conn.execute(
+                "UPDATE bot_trades SET usd_size = ? WHERE id = ?",
+                (round(row["usd_size"] - slice_usd, 4), trade_id),
+            )
+            return int(cur.lastrowid or 0)
+
     def close_trade(self, trade_id: int, exit_price: float, exit_note: str) -> None:
         with self._connect() as conn:
             row = conn.execute(

@@ -15,6 +15,12 @@ from datetime import datetime, timezone
 
 from models.schemas.bots import BotConfig, BotState, BotStatus
 from modules.bots.ledger import BotLedger
+from modules.bots.profit_capture import (
+    CaptureState,
+    ProfitCaptureConfig,
+    ProfitTier,
+    evaluate as capture_evaluate,
+)
 from modules.bots.strategies import Strategy
 
 logger = logging.getLogger(__name__)
@@ -49,6 +55,10 @@ class BotRunner:
         self._last_price: dict[int, float] = {}
         # trade_id -> peak price since entry (drives the trailing stop).
         self._peak_price: dict[int, float] = {}
+        # trade_id -> (capture state, original usd) for Dynamic Profit
+        # Capture. In-memory like the peak marks: after a restart the open
+        # remainder is treated as a fresh original (documented behaviour).
+        self._capture: dict[int, tuple[CaptureState, float]] = {}
         # mint -> monotonic time until which re-entry is blocked (stops the
         # bot from re-buying the same coin over and over after each exit).
         self._cooldown: dict[str, float] = {}
@@ -171,6 +181,7 @@ class BotRunner:
         """Drop in-memory price marks (used after a ledger reset)."""
         self._last_price.clear()
         self._peak_price.clear()
+        self._capture.clear()
 
     def request_tick(self) -> None:
         """Event-driven tick: evaluate NOW instead of waiting the interval.
@@ -206,12 +217,33 @@ class BotRunner:
                 self._peak_price[trade.id] = peak
                 change_pct = (price - trade.entry_price) / trade.entry_price * 100
                 peak_gain_pct = (peak - trade.entry_price) / trade.entry_price * 100
-                if change_pct >= self.config.take_profit_pct:
+                if self.config.profit_capture.enabled:
+                    # Dynamic Profit Capture owns the PROFIT side. The risk
+                    # floor stays immediate: stop-loss and stall exit first,
+                    # then tiered scale-out / tightening trail / time decay.
+                    if change_pct <= -self.config.stop_loss_pct:
+                        self._close(trade.id, trade.mint, trade.entry_price, price, "stop-loss")
+                        continue
+                    if (
+                        self.config.stall_exit_s is not None
+                        and held_s >= self.config.stall_exit_s
+                        and peak_gain_pct < self.config.stall_min_gain_pct
+                        and change_pct < self.config.stall_min_gain_pct
+                    ):
+                        self._close(
+                            trade.id, trade.mint, trade.entry_price, price,
+                            f"stall-exit (no move in {int(held_s)}s)",
+                        )
+                        continue
+                    if self._capture_tick(trade, price, peak, held_s):
+                        continue  # position fully closed by the engine
+                    # fall through only to the bottom max-hold safety net
+                elif change_pct >= self.config.take_profit_pct:
                     self._close(trade.id, trade.mint, trade.entry_price, price, "take-profit")
                     continue
                 # Trailing stop: armed once the peak gain clears the
                 # threshold; fires when price gives back too much of it.
-                if (
+                elif (
                     self.config.trail_after_pct is not None
                     and self.config.trail_drop_pct is not None
                     and peak_gain_pct >= self.config.trail_after_pct
@@ -225,7 +257,7 @@ class BotRunner:
                 # Break-even stop: once a position has been meaningfully up,
                 # never let it become a full stop-loss — exit ~flat instead
                 # of round-tripping a winner into a -18% loser.
-                if (
+                elif (
                     self.config.break_even_at_pct is not None
                     and peak_gain_pct >= self.config.break_even_at_pct
                     and change_pct <= 0.5
@@ -235,7 +267,20 @@ class BotRunner:
                         f"break-even stop (peak +{peak_gain_pct:.1f}%)",
                     )
                     continue
-                if change_pct <= -self.config.stop_loss_pct:
+                # Stall exit (time stop): the impulse never came — get out
+                # near flat instead of bleeding down to the full stop-loss.
+                elif (
+                    self.config.stall_exit_s is not None
+                    and held_s >= self.config.stall_exit_s
+                    and peak_gain_pct < self.config.stall_min_gain_pct
+                    and change_pct < self.config.stall_min_gain_pct
+                ):
+                    self._close(
+                        trade.id, trade.mint, trade.entry_price, price,
+                        f"stall-exit (no move in {int(held_s)}s)",
+                    )
+                    continue
+                elif change_pct <= -self.config.stop_loss_pct:
                     self._close(trade.id, trade.mint, trade.entry_price, price, "stop-loss")
                     continue
             if held_s >= self.config.max_hold_s:
@@ -246,6 +291,51 @@ class BotRunner:
                 if trade.id not in self._last_price:
                     note += " (no live price seen; closed flat)"
                 self._close(trade.id, trade.mint, trade.entry_price, exit_price, note)
+
+    def _capture_cfg(self) -> ProfitCaptureConfig:
+        """Bridge the persisted per-bot settings into the pure engine's
+        config. max_hold_s stays single-sourced from the bot config."""
+        pc = self.config.profit_capture
+        return ProfitCaptureConfig(
+            enabled=pc.enabled,
+            tiers=[ProfitTier(t.gain_pct, t.sell_pct) for t in pc.tiers],
+            base_trail_drop_pct=pc.base_trail_drop_pct,
+            min_trail_drop_pct=pc.min_trail_drop_pct,
+            decay_after_s=pc.decay_after_s,
+            max_hold_s=self.config.max_hold_s,
+        )
+
+    def _capture_tick(self, trade, price: float, peak: float, held_s: float) -> bool:
+        """Run the Dynamic Profit Capture engine for one open position.
+        Executes its actions through the same slippage-modelled fill path
+        as every other exit. Returns True if the position fully closed."""
+        state, original_usd = self._capture.get(trade.id) or (CaptureState(), trade.usd_size)
+        self._capture[trade.id] = (state, original_usd)
+        actions = capture_evaluate(
+            entry_price=trade.entry_price, price=price, peak_price=peak,
+            held_s=held_s, cfg=self._capture_cfg(), state=state,
+        )
+        for action in actions:
+            if action.kind == "partial_sell":
+                exit_price, suffix = self._realistic_exit(trade.entry_price, price)
+                slice_usd = min(round(original_usd * action.sell_frac, 4), trade.usd_size)
+                slice_id = self._ledger.partial_close(
+                    trade.id, slice_usd, exit_price,
+                    f"profit-capture {action.reason}{suffix}",
+                )
+                if slice_id is not None:
+                    state.remaining_frac = max(0.0, state.remaining_frac - action.sell_frac)
+                    logger.info(
+                        "bot %s profit-capture %s on %s: slice $%.2f realized",
+                        self.config.id, action.reason, trade.symbol, slice_usd,
+                    )
+            else:  # full_close
+                self._close(
+                    trade.id, trade.mint, trade.entry_price, price,
+                    f"profit-capture {action.reason}",
+                )
+                return True
+        return False
 
     def _realistic_exit(self, entry_price: float, mark: float) -> tuple[float, str]:
         """Model a realizable fill: a slippage haircut on every exit, and a
@@ -279,6 +369,7 @@ class BotRunner:
         )
         self._last_price.pop(trade_id, None)
         self._peak_price.pop(trade_id, None)
+        self._capture.pop(trade_id, None)
         # Block re-buying this same coin until the cooldown expires.
         self._cooldown[mint] = time.monotonic() + self.config.reentry_cooldown_s
         # Let the strategy release live-stream resources for this mint.

@@ -30,6 +30,7 @@ from models.schemas.bots import (
     BotTrade,
     EquityPoint,
     FactorInsight,
+    ProfitCaptureSettings,
     SniperTelemetry,
 )
 from modules.bots.ledger import BotLedger
@@ -71,6 +72,11 @@ def _default_configs(settings: Settings) -> list[BotConfig]:
             trail_after_pct=15.0,  # up 15%? protect it:
             trail_drop_pct=8.0,  # give back 8% from peak -> out (let winners run less far back)
             break_even_at_pct=10.0,  # once +10%, never let it become a -18% loss
+            stall_exit_s=90.0,  # no move in 90s = failed impulse -> out ~flat
+            stall_min_gain_pct=3.0,
+            # Dynamic Profit Capture: tiered scale-out with a tightening
+            # trail replaces the fixed +40% take-profit on the sniper.
+            profit_capture=ProfitCaptureSettings(enabled=True),
             # Fresh launches are thin: a real exit is much worse than the
             # marked mcap. 3% haircut + a modest cap keeps paper honest —
             # you can't actually dump a new launch at +300%.

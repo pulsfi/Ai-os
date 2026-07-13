@@ -285,6 +285,24 @@ export type PaperSummary = z.infer<typeof paperSummarySchema>;
 
 export const botStateSchema = z.enum(["stopped", "running", "error"]);
 
+/** One rung of the Dynamic Profit Capture ladder. */
+export const profitTierSchema = z.object({
+  gain_pct: z.number(),
+  sell_pct: z.number(),
+});
+
+/** Tiered scale-out with a tightening trail — replaces fixed TP when on. */
+export const profitCaptureSchema = z.object({
+  enabled: z.boolean(),
+  tiers: z.array(profitTierSchema),
+  base_trail_drop_pct: z.number(),
+  min_trail_drop_pct: z.number(),
+  decay_after_s: z.number(),
+});
+
+export type ProfitCapture = z.infer<typeof profitCaptureSchema>;
+export type ProfitTier = z.infer<typeof profitTierSchema>;
+
 export const botConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -299,12 +317,15 @@ export const botConfigSchema = z.object({
   trail_after_pct: z.number().nullable(),
   trail_drop_pct: z.number().nullable(),
   break_even_at_pct: z.number().nullable().optional(),
+  stall_exit_s: z.number().nullable().optional(),
+  stall_min_gain_pct: z.number().optional(),
   exit_slippage_bps: z.number(),
   max_gain_pct: z.number(),
   reentry_cooldown_s: z.number(),
   one_shot_per_mint: z.boolean(),
   // Execution threshold (0-100): minimum confidence a scored entry needs.
   min_confidence: z.number().optional(),
+  profit_capture: profitCaptureSchema.optional(),
 });
 
 export const botStatusSchema = z.object({
