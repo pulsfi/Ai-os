@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from api.v1 import (
     agents,
     alerts,
+    backtest,
     bots,
     chat,
     execution,
@@ -34,3 +35,4 @@ api_router.include_router(ws.router, prefix="/ws", tags=["ws"])
 api_router.include_router(vault.router, prefix="/vault", tags=["vault"])
 api_router.include_router(execution.router, prefix="/execution", tags=["execution"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(backtest.router, prefix="/backtest", tags=["backtest"])

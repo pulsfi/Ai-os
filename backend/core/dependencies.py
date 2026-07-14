@@ -36,6 +36,7 @@ from modules.execution import (
     get_swap_builder,
 )
 from modules.execution.live_ledger import LiveTradeService, get_live_trade_service
+from modules.backtest import BacktestEngine, get_recorder
 from modules.market import MarketManager, get_market_manager
 from modules.market.helius import HeliusClient, get_helius_client
 from modules.market.pumpfun import PumpFunClient, get_pumpfun_client
@@ -144,6 +145,11 @@ def get_helius(settings: SettingsDep) -> HeliusClient:
     return get_helius_client(settings)
 
 
+def get_backtest(settings: SettingsDep) -> BacktestEngine:
+    """Provide the capture-replay backtest engine over the shared recorder."""
+    return BacktestEngine(get_recorder(settings))
+
+
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 RedisDep = Annotated[Redis, Depends(get_redis_client)]
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
@@ -162,3 +168,4 @@ ExecutorDep = Annotated[DryRunExecutor, Depends(get_exec)]
 SwapBuilderDep = Annotated[ManualSwapBuilder, Depends(get_swaps)]
 LiveTradesDep = Annotated[LiveTradeService, Depends(get_live_trades)]
 AlertsDep = Annotated[AlertService, Depends(get_alerts)]
+BacktestDep = Annotated[BacktestEngine, Depends(get_backtest)]

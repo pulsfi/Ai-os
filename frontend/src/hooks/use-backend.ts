@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   agentsService,
   alertsService,
+  backtestService,
   botsService,
   chatService,
   executionService,
@@ -335,6 +336,34 @@ export function useSniperTelemetry() {
     queryKey: qk.botTelemetry,
     queryFn: botsService.telemetry,
     refetchInterval: 10_000,
+  });
+}
+
+/** Backtesting: recorded-window coverage (is there enough data to trust?). */
+export function useBacktestCoverage() {
+  return useQuery({
+    queryKey: ["backtest", "coverage"],
+    queryFn: backtestService.coverage,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Backtesting: the variant grid ranked by expectancy (heavier replay —
+ * refreshed on demand and every 2 minutes). */
+export function useBacktestRank() {
+  return useQuery({
+    queryKey: ["backtest", "rank"],
+    queryFn: () => backtestService.rank(),
+    refetchInterval: 120_000,
+  });
+}
+
+/** Backtesting: walk-forward validation for one exit mode. */
+export function useWalkForward(exitMode: "fixed" | "capture") {
+  return useQuery({
+    queryKey: ["backtest", "walkforward", exitMode],
+    queryFn: () => backtestService.walkForward(exitMode),
+    refetchInterval: 120_000,
   });
 }
 

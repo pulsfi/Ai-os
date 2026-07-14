@@ -37,6 +37,12 @@ import {
   type ChatStatus,
   type HealthReport,
   type HistoryPoint,
+  backtestCoverageSchema,
+  backtestVariantSchema,
+  walkForwardSchema,
+  type BacktestCoverage,
+  type BacktestVariant,
+  type WalkForwardReport,
   resetResultSchema,
   sniperTelemetrySchema,
   type BotControlResult,
@@ -215,6 +221,20 @@ export const botsService = {
     }>,
   ): Promise<BotStatus> =>
     patchValidated(`/bots/${encodeURIComponent(botId)}/config`, update, botStatusSchema),
+};
+
+export const backtestService = {
+  /** GET /backtest/coverage — recorded window size (trust gauge). */
+  coverage: (): Promise<BacktestCoverage> =>
+    getValidated("/backtest/coverage", backtestCoverageSchema),
+
+  /** GET /backtest/rank — variant grid ranked by expectancy + validation. */
+  rank: (windowDays = 5): Promise<BacktestVariant[]> =>
+    getValidated(`/backtest/rank?window_days=${windowDays}`, z.array(backtestVariantSchema)),
+
+  /** GET /backtest/walkforward — train/test folds, the anti-overfit gate. */
+  walkForward: (exitMode: "fixed" | "capture" = "capture"): Promise<WalkForwardReport> =>
+    getValidated(`/backtest/walkforward?exit_mode=${exitMode}`, walkForwardSchema),
 };
 
 export const executionService = {

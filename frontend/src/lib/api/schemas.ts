@@ -433,6 +433,40 @@ export const sniperTelemetrySchema = z.object({
 export type SniperTelemetry = z.infer<typeof sniperTelemetrySchema>;
 export type RejectionRecord = z.infer<typeof rejectionRecordSchema>;
 
+/** Capture-replay backtesting: how much recorded reality is available. */
+export const backtestCoverageSchema = z.object({
+  samples: z.number(),
+  sampled_mints: z.number(),
+  snapshots: z.number(),
+  evaluated_launches: z.number(),
+  window_hours: z.number(),
+});
+
+export const backtestVariantSchema = z.object({
+  variant: z.string(),
+  exit_mode: z.string(),
+  threshold: z.number(),
+  trades: z.number(),
+  net_profit_usd: z.number(),
+  profit_factor: z.number().nullable(),
+  win_rate_pct: z.number().nullable(),
+  sharpe: z.number().nullable(),
+  max_drawdown_usd: z.number().nullable(),
+  expectancy_usd: z.number().nullable(),
+  validated: z.boolean(),
+});
+
+export const walkForwardSchema = z.object({
+  validated: z.boolean(),
+  exit_mode: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  folds: z.array(z.record(z.string(), z.unknown())),
+});
+
+export type BacktestCoverage = z.infer<typeof backtestCoverageSchema>;
+export type BacktestVariant = z.infer<typeof backtestVariantSchema>;
+export type WalkForwardReport = z.infer<typeof walkForwardSchema>;
+
 export const resetResultSchema = z.object({
   wiped: z.number(),
   detail: z.string(),

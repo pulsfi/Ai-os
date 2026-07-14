@@ -159,10 +159,13 @@ class BotManager:
         self._stream: LaunchStream | None = (
             get_launch_stream(settings) if settings.pumpportal_enabled else None
         )
+        from modules.backtest.recorder import get_recorder
+
         strategies = {
             "new_launch_sniper": NewLaunchSniper(
                 pumpfun, market, helius, stream=self._stream,
                 rpc=get_rpc_client(settings),
+                recorder=get_recorder(settings),
             ),
             "graduation_momentum": GraduationMomentum(pumpfun, market),
             "trend_scalper": TrendScalper(pumpfun, market),

@@ -133,6 +133,9 @@ class NewLaunchSniper(Strategy):
         # (~25% at $10k mcap is NORMAL), so this must only catch true
         # domination — 30% choked off nearly every legitimate entry.
         max_top5_holder_pct: float = 45.0,
+        # Optional capture-replay recorder (backtesting): receives price
+        # samples + decision snapshots. Recording never affects trading.
+        recorder=None,
     ) -> None:
         super().__init__(pumpfun, market)
         self._helius = helius  # kept for wiring; unused (blind to bonding curve)
@@ -162,6 +165,7 @@ class NewLaunchSniper(Strategy):
         self._evals: dict[str, dict] = {}
         self.signals_total = 0  # unique launches evaluated
         self.approved_total = 0  # unique launches that passed every gate
+        self._recorder = recorder
 
     async def _breadth_backstop(self, mint: str) -> tuple[bool, str | None]:
         """Second chance at the anti-bundle gate when the stream had no
@@ -221,7 +225,8 @@ class NewLaunchSniper(Strategy):
         return "other"
 
     def _record_eval(
-        self, mint: str, symbol: str, score: float, approved: bool, reasons: list[str]
+        self, mint: str, symbol: str, score: float, approved: bool, reasons: list[str],
+        mcap_usd: float | None = None, buyers: int | None = None,
     ) -> None:
         """Latest verdict per mint. A mint that later passes overwrites its
         earlier rejection, so the dashboard reflects final outcomes. Every
@@ -245,6 +250,9 @@ class NewLaunchSniper(Strategy):
             "reasons": reasons[:4],
             "categories": sorted({self._reject_category(r) for r in reasons}),
         }
+        if self._recorder is not None and (prev is None or prev["approved"] != approved):
+            # Capture-replay: persist the decision features for backtesting.
+            self._recorder.snapshot(mint, symbol, score, approved, mcap_usd, buyers)
         if prev is None or prev["approved"] != approved or prev["reasons"] != record["reasons"]:
             logger.info(
                 "sniper %s %s (%s): score=%.1f threshold=%.0f risk=%s%s",
@@ -453,6 +461,8 @@ class NewLaunchSniper(Strategy):
             if mcap_sol is None:
                 continue
             mcap_usd = mcap_sol * sol_usd
+            if self._recorder is not None:
+                self._recorder.sample(event.mint, mcap_usd / _PUMP_SUPPLY)
             if not (self._min_mcap <= mcap_usd <= self._max_mcap):
                 continue
             age_s = _time.monotonic() - event.received_at
@@ -466,21 +476,25 @@ class NewLaunchSniper(Strategy):
             )
             sym = event.symbol or event.mint[:6]
             if not verdict.approved:
-                self._record_eval(event.mint, sym, verdict.score, False, verdict.rejects)
+                self._record_eval(event.mint, sym, verdict.score, False, verdict.rejects,
+                                  mcap_usd=mcap_usd, buyers=buyers)
                 continue  # scored too low / hard-rejected -> skip this launch
             holders_ok, holders_note = await self._holders_ok(event.mint)
             if not holders_ok:
-                self._record_eval(event.mint, sym, verdict.score, False, [holders_note])
+                self._record_eval(event.mint, sym, verdict.score, False, [holders_note],
+                                  mcap_usd=mcap_usd, buyers=buyers)
                 continue  # concentrated supply — one dump wipes the position
             extra = ""
             if buyers is None:  # stream had no flow — try the Helius backstop
                 b_ok, b_note = await self._breadth_backstop(event.mint)
                 if not b_ok:
-                    self._record_eval(event.mint, sym, verdict.score, False, [b_note or ""])
+                    self._record_eval(event.mint, sym, verdict.score, False, [b_note or ""],
+                                      mcap_usd=mcap_usd, buyers=buyers)
                     continue
                 if b_note:
                     extra = f", {b_note}"
-            self._record_eval(event.mint, sym, verdict.score, True, [])
+            self._record_eval(event.mint, sym, verdict.score, True, [],
+                              mcap_usd=mcap_usd, buyers=buyers)
             signals.append(
                 EntrySignal(
                     mint=event.mint,
@@ -508,6 +522,11 @@ class NewLaunchSniper(Strategy):
         if len(signals) < slots and (not stream_live or self._tick_n % 6 == 0):
             coins = await self._pumpfun.get_new_coins(limit=30)
             now = datetime.now(timezone.utc)
+            if self._recorder is not None:
+                # Record EVERY observed launch price — the replay data
+                # backtests run on, regardless of what we trade this tick.
+                for c in coins:
+                    self._recorder.sample(c.mint, _pump_price(c))
             for coin in coins:
                 if len(signals) >= slots:
                     break
@@ -537,21 +556,25 @@ class NewLaunchSniper(Strategy):
                 )
                 sym = coin.symbol or coin.mint[:6]
                 if not verdict.approved:
-                    self._record_eval(coin.mint, sym, verdict.score, False, verdict.rejects)
+                    self._record_eval(coin.mint, sym, verdict.score, False, verdict.rejects,
+                                      mcap_usd=coin.usd_market_cap, buyers=buyers)
                     continue  # scored too low / hard-rejected
                 holders_ok, holders_note = await self._holders_ok(coin.mint)
                 if not holders_ok:
-                    self._record_eval(coin.mint, sym, verdict.score, False, [holders_note])
+                    self._record_eval(coin.mint, sym, verdict.score, False, [holders_note],
+                                      mcap_usd=coin.usd_market_cap, buyers=buyers)
                     continue  # concentrated supply — one dump wipes the position
                 extra = ""
                 if buyers is None:  # stream had no flow — try the Helius backstop
                     b_ok, b_note = await self._breadth_backstop(coin.mint)
                     if not b_ok:
-                        self._record_eval(coin.mint, sym, verdict.score, False, [b_note or ""])
+                        self._record_eval(coin.mint, sym, verdict.score, False, [b_note or ""],
+                                          mcap_usd=coin.usd_market_cap, buyers=buyers)
                         continue
                     if b_note:
                         extra = f", {b_note}"
-                self._record_eval(coin.mint, sym, verdict.score, True, [])
+                self._record_eval(coin.mint, sym, verdict.score, True, [],
+                                  mcap_usd=coin.usd_market_cap, buyers=buyers)
                 signals.append(
                     EntrySignal(
                         mint=coin.mint,

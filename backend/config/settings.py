@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     pumpportal_enabled: bool = True
     bots_usd_per_trade: float = 50.0  # virtual position size
     bots_db_path: str = "data/paper_bots.db"  # bot ledger, relative to backend/
+    # Capture-replay backtesting: rolling window of recorded launches +
+    # price paths (backtest.db lives next to the bot ledger).
+    backtest_retention_days: float = 5.0
     # Honest paper pricing: model that exits aren't free and can't be dumped
     # at an overshot mark on illiquid meme coins. Every close takes a
     # slippage haircut, and per-trade gains are capped to a realizable level.
