@@ -57,6 +57,20 @@ async def performance(bots: BotManagerDep) -> list[BotPerformance]:
     return bots.performance()
 
 
+@router.get("/optimizer")
+async def optimizer_status(bots: BotManagerDep) -> dict:
+    """Adaptive optimizer state: current mode, regime metrics, applied
+    parameters, and the cooling lock."""
+    return bots.optimizer.status()
+
+
+@router.post("/optimizer/run")
+async def optimizer_run(bots: BotManagerDep, force: bool = Query(default=False)) -> dict:
+    """Run one optimization pass now. force=true overrides the cooling
+    lock (explicit human decision — automatic passes never do)."""
+    return bots.optimizer.optimize(force=force)
+
+
 @router.get("/telemetry", response_model=SniperTelemetry)
 async def telemetry(bots: BotManagerDep) -> SniperTelemetry:
     """The sniper's live signals funnel: launches seen, rejections with the

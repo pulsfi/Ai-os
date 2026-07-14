@@ -39,6 +39,10 @@ import {
   type HistoryPoint,
   backtestCoverageSchema,
   backtestVariantSchema,
+  optimizerRunSchema,
+  optimizerStatusSchema,
+  type OptimizerRun,
+  type OptimizerStatus,
   walkForwardSchema,
   type BacktestCoverage,
   type BacktestVariant,
@@ -174,6 +178,14 @@ export const botsService = {
   /** GET /bots/telemetry — the sniper's signals funnel (rejections + why). */
   telemetry: (): Promise<SniperTelemetry> =>
     getValidated("/bots/telemetry", sniperTelemetrySchema),
+
+  /** GET /bots/optimizer — adaptive optimizer state (mode, metrics, lock). */
+  optimizer: (): Promise<OptimizerStatus> =>
+    getValidated("/bots/optimizer", optimizerStatusSchema),
+
+  /** POST /bots/optimizer/run — one optimization pass (force skips the lock). */
+  optimizeNow: (force = false): Promise<OptimizerRun> =>
+    postValidated(`/bots/optimizer/run?force=${force}`, undefined, optimizerRunSchema),
 
   /** GET /bots/trades — fleet-wide paper trade log, newest first. */
   allTrades: (limit = 50): Promise<BotTrade[]> =>

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # Capture-replay backtesting: rolling window of recorded launches +
     # price paths (backtest.db lives next to the bot ledger).
     backtest_retention_days: float = 5.0
+    # Adaptive optimizer: regime-driven parameter tuning with a cooling
+    # lock. Thresholds only move to walk-forward VALIDATED values.
+    optimizer_enabled: bool = True
+    optimizer_cooling_hours: float = 6.0
+    optimizer_interval_seconds: float = 1800.0
     # Honest paper pricing: model that exits aren't free and can't be dumped
     # at an overshot mark on illiquid meme coins. Every close takes a
     # slippage haircut, and per-trade gains are capped to a realizable level.

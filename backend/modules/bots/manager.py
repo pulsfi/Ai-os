@@ -185,6 +185,14 @@ class BotManager:
             if hasattr(strategy, "_min_confidence"):
                 strategy._min_confidence = config.min_confidence
             self._runners[config.id] = BotRunner(config, strategy, self._ledger)
+        # Adaptive optimizer: measures the launch-market regime and retunes
+        # the sniper through update_config, behind a cooling lock.
+        from modules.backtest import BacktestEngine
+        from modules.bots.optimizer import AdaptiveOptimizer
+
+        self.optimizer = AdaptiveOptimizer(
+            self, get_recorder(settings), BacktestEngine(get_recorder(settings)), settings
+        )
         logger.info("Bot fleet built: %s (PAPER MODE)", ", ".join(self._runners))
 
     # -- config tuning ------------------------------------------------------
@@ -240,8 +248,10 @@ class BotManager:
             self._stream.add_listener(self._runners["sniper"].request_tick)
         for runner in self._runners.values():
             runner.start()
+        self.optimizer.start()
 
     async def stop_all(self) -> None:
+        await self.optimizer.stop()
         for runner in self._runners.values():
             await runner.stop()
 

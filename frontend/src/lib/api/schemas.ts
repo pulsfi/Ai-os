@@ -433,6 +433,26 @@ export const sniperTelemetrySchema = z.object({
 export type SniperTelemetry = z.infer<typeof sniperTelemetrySchema>;
 export type RejectionRecord = z.infer<typeof rejectionRecordSchema>;
 
+/** Adaptive optimizer: regime metrics + applied params + cooling lock. */
+export const optimizerStatusSchema = z.object({
+  enabled: z.boolean(),
+  locked: z.boolean(),
+  locked_until: z.string().nullable(),
+  last_applied_at: z.string().nullable().optional(),
+  mode: z.string().nullable().optional(),
+  metrics: z.record(z.string(), z.unknown()).nullable().optional(),
+  params: z.record(z.string(), z.unknown()).nullable().optional(),
+  threshold_note: z.string().nullable().optional(),
+});
+
+export const optimizerRunSchema = optimizerStatusSchema.extend({
+  applied: z.boolean(),
+  reason: z.string().nullable().optional(),
+});
+
+export type OptimizerStatus = z.infer<typeof optimizerStatusSchema>;
+export type OptimizerRun = z.infer<typeof optimizerRunSchema>;
+
 /** Capture-replay backtesting: how much recorded reality is available. */
 export const backtestCoverageSchema = z.object({
   samples: z.number(),

@@ -339,6 +339,26 @@ export function useSniperTelemetry() {
   });
 }
 
+/** Adaptive optimizer: mode, regime metrics, applied params, cooling lock. */
+export function useOptimizer() {
+  return useQuery({
+    queryKey: ["bots", "optimizer"],
+    queryFn: botsService.optimizer,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Run one optimization pass now (refreshes optimizer + fleet on success). */
+export function useOptimizeNow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (force: boolean) => botsService.optimizeNow(force),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["bots"] });
+    },
+  });
+}
+
 /** Backtesting: recorded-window coverage (is there enough data to trust?). */
 export function useBacktestCoverage() {
   return useQuery({
