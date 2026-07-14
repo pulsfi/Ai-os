@@ -339,6 +339,15 @@ export function useSniperTelemetry() {
   });
 }
 
+/** Fleet risk snapshot: exposure vs cap, daily budget, worst case. */
+export function usePortfolioRisk() {
+  return useQuery({
+    queryKey: ["bots", "risk"],
+    queryFn: botsService.risk,
+    refetchInterval: 15_000,
+  });
+}
+
 /** Adaptive optimizer: mode, regime metrics, applied params, cooling lock. */
 export function useOptimizer() {
   return useQuery({

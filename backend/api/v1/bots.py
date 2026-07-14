@@ -18,6 +18,7 @@ from models.schemas.bots import (
     BotPerformance,
     BotStatus,
     BotTrade,
+    PortfolioRisk,
     SniperTelemetry,
 )
 
@@ -55,6 +56,13 @@ async def performance(bots: BotManagerDep) -> list[BotPerformance]:
     PnL, win rate, avg/best/worst trade. The evidence the Stage 5 gate
     will be judged on."""
     return bots.performance()
+
+
+@router.get("/risk", response_model=PortfolioRisk)
+async def portfolio_risk(bots: BotManagerDep) -> PortfolioRisk:
+    """Fleet risk snapshot: exposure vs cap, daily PnL vs loss limit,
+    worst-case risk at stop, per-symbol concentration, active blocks."""
+    return bots.portfolio_risk()
 
 
 @router.get("/optimizer")

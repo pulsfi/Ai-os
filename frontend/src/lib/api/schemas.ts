@@ -433,6 +433,22 @@ export const sniperTelemetrySchema = z.object({
 export type SniperTelemetry = z.infer<typeof sniperTelemetrySchema>;
 export type RejectionRecord = z.infer<typeof rejectionRecordSchema>;
 
+/** Fleet-wide risk snapshot: exposure, budgets, worst case, concentration. */
+export const portfolioRiskSchema = z.object({
+  open_positions: z.number(),
+  open_exposure_usd: z.number(),
+  max_exposure_usd: z.number(),
+  exposure_used_pct: z.number(),
+  today_pnl_usd: z.number(),
+  daily_loss_limit_usd: z.number(),
+  daily_budget_left_usd: z.number(),
+  risk_at_stop_usd: z.number(),
+  exposure_by_symbol: z.record(z.string(), z.number()),
+  entries_blocked: z.string().nullable(),
+});
+
+export type PortfolioRisk = z.infer<typeof portfolioRiskSchema>;
+
 /** Adaptive optimizer: regime metrics + applied params + cooling lock. */
 export const optimizerStatusSchema = z.object({
   enabled: z.boolean(),

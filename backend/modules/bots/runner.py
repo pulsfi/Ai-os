@@ -36,7 +36,12 @@ class BotRunner:
         ledger: BotLedger,
         exit_slippage_bps: int | None = None,
         max_gain_pct: float | None = None,
+        # Fleet-level risk controls (None = off, e.g. in unit tests):
+        daily_loss_limit_usd: float | None = None,
+        max_exposure_usd: float | None = None,
     ) -> None:
+        self._daily_loss_limit = daily_loss_limit_usd
+        self._max_exposure = max_exposure_usd
         self.config = config
         self._strategy = strategy
         self._ledger = ledger
@@ -109,6 +114,26 @@ class BotRunner:
             return self.GUARD_SIZE_FACTOR
         self._risk_note = None
         return 1.0
+
+    def _fleet_risk_block(self) -> str | None:
+        """Fleet-level circuit breakers (fast: two aggregate reads on the
+        shared ledger). Open positions keep being MANAGED and closed — only
+        NEW entries are blocked, and the reason is surfaced on the bot."""
+        if self._daily_loss_limit is not None:
+            today = self._ledger.today_pnl_usd()
+            if today <= -self._daily_loss_limit:
+                return (
+                    f"daily loss limit: ${today:.2f} realized today "
+                    f"(limit -${self._daily_loss_limit:.0f}) — entries paused until UTC midnight"
+                )
+        if self._max_exposure is not None:
+            exposure = self._ledger.open_exposure_usd()
+            if exposure >= self._max_exposure:
+                return (
+                    f"max exposure: ${exposure:.2f} open across the fleet "
+                    f"(cap ${self._max_exposure:.0f}) — waiting for positions to close"
+                )
+        return None
 
     def _position_size(self, confidence: float | None, governor: float = 1.0) -> float:
         """Adaptive sizing: conviction scales a position up (0.6x at the
@@ -383,6 +408,11 @@ class BotRunner:
             return
         # A bleeding recent record halves size — it never halts entries.
         governor = self._risk_governor()
+        # Fleet circuit breakers DO halt new entries (daily loss / exposure).
+        block = self._fleet_risk_block()
+        if block is not None:
+            self._risk_note = block
+            return
         # Exclude held mints, mints in cooldown, and (one-shot) any mint
         # ever traded — one chance per coin, then on to the next.
         now = time.monotonic()
@@ -406,11 +436,21 @@ class BotRunner:
                     self.config.id, signal.symbol,
                 )
                 continue
+            usd = self._position_size(signal.confidence, governor)
+            if (
+                self._max_exposure is not None
+                and self._ledger.open_exposure_usd() + usd > self._max_exposure
+            ):
+                logger.info(
+                    "bot %s skipped approved %s: would exceed max exposure",
+                    self.config.id, signal.symbol,
+                )
+                break  # no headroom left this tick
             trade_id = self._ledger.open_trade(
                 bot_id=self.config.id,
                 mint=signal.mint,
                 symbol=signal.symbol,
-                usd_size=self._position_size(signal.confidence, governor),
+                usd_size=usd,
                 entry_price=signal.price_usd,
                 entry_note=signal.note,
             )

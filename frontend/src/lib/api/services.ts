@@ -41,8 +41,10 @@ import {
   backtestVariantSchema,
   optimizerRunSchema,
   optimizerStatusSchema,
+  portfolioRiskSchema,
   type OptimizerRun,
   type OptimizerStatus,
+  type PortfolioRisk,
   walkForwardSchema,
   type BacktestCoverage,
   type BacktestVariant,
@@ -178,6 +180,9 @@ export const botsService = {
   /** GET /bots/telemetry — the sniper's signals funnel (rejections + why). */
   telemetry: (): Promise<SniperTelemetry> =>
     getValidated("/bots/telemetry", sniperTelemetrySchema),
+
+  /** GET /bots/risk — fleet exposure, daily budget, worst case at stops. */
+  risk: (): Promise<PortfolioRisk> => getValidated("/bots/risk", portfolioRiskSchema),
 
   /** GET /bots/optimizer — adaptive optimizer state (mode, metrics, lock). */
   optimizer: (): Promise<OptimizerStatus> =>

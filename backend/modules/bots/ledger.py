@@ -214,6 +214,26 @@ class BotLedger:
             ).fetchall()
         return {(r["symbol"] or "").strip().lower() for r in rows if r["symbol"]}
 
+    def open_exposure_usd(self) -> float:
+        """Total virtual USD across ALL open positions, fleet-wide — the
+        number the max-exposure gate compares against."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(usd_size), 0) AS s FROM bot_trades WHERE status = 'open'"
+            ).fetchone()
+        return float(row["s"])
+
+    def today_pnl_usd(self) -> float:
+        """Fleet-wide REALIZED PnL since UTC midnight (the daily-loss gate)."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT COALESCE(SUM(pnl_usd), 0) AS s FROM bot_trades
+                   WHERE status = 'closed' AND exit_ts >= ?""",
+                (today,),
+            ).fetchone()
+        return float(row["s"])
+
     def stats(self, bot_id: str) -> dict[str, float | int | None]:
         """open count, closed count, realized PnL, win rate for one bot."""
         with self._connect() as conn:

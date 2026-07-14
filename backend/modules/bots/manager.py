@@ -30,6 +30,7 @@ from models.schemas.bots import (
     BotTrade,
     EquityPoint,
     FactorInsight,
+    PortfolioRisk,
     ProfitCaptureSettings,
     SniperTelemetry,
 )
@@ -184,7 +185,13 @@ class BotManager:
             # persisted) — push it into scoring strategies at build time.
             if hasattr(strategy, "_min_confidence"):
                 strategy._min_confidence = config.min_confidence
-            self._runners[config.id] = BotRunner(config, strategy, self._ledger)
+            self._runners[config.id] = BotRunner(
+                config, strategy, self._ledger,
+                daily_loss_limit_usd=settings.bots_daily_loss_limit_usd,
+                max_exposure_usd=settings.bots_max_exposure_usd,
+            )
+        self._daily_loss_limit = settings.bots_daily_loss_limit_usd
+        self._max_exposure = settings.bots_max_exposure_usd
         # Adaptive optimizer: measures the launch-market regime and retunes
         # the sniper through update_config, behind a cooling lock.
         from modules.backtest import BacktestEngine
@@ -369,6 +376,41 @@ class BotManager:
                 )
             )
         return results
+
+    def portfolio_risk(self) -> PortfolioRisk:
+        """Fleet-wide risk right now: open exposure vs the cap, realized
+        daily PnL vs the loss limit, worst-case risk at stop across all
+        open positions, and per-symbol concentration. Two aggregate reads +
+        the open-trades list — fast enough for a dashboard poll."""
+        open_all: list[BotTrade] = []
+        risk_at_stop = 0.0
+        for runner in self._runners.values():
+            for t in self._ledger.open_trades(runner.config.id):
+                open_all.append(t)
+                risk_at_stop += t.usd_size * runner.config.stop_loss_pct / 100.0
+        exposure = round(sum(t.usd_size for t in open_all), 2)
+        today = round(self._ledger.today_pnl_usd(), 2)
+        by_symbol: dict[str, float] = {}
+        for t in open_all:
+            by_symbol[t.symbol] = round(by_symbol.get(t.symbol, 0.0) + t.usd_size, 2)
+        blocked = None
+        if today <= -self._daily_loss_limit:
+            blocked = "daily loss limit hit — new entries paused until UTC midnight"
+        elif exposure >= self._max_exposure:
+            blocked = "max exposure reached — waiting for positions to close"
+        return PortfolioRisk(
+            open_positions=len(open_all),
+            open_exposure_usd=exposure,
+            max_exposure_usd=self._max_exposure,
+            exposure_used_pct=round(exposure / self._max_exposure * 100, 1)
+            if self._max_exposure else 0.0,
+            today_pnl_usd=today,
+            daily_loss_limit_usd=self._daily_loss_limit,
+            daily_budget_left_usd=round(max(0.0, self._daily_loss_limit + min(today, 0.0)), 2),
+            risk_at_stop_usd=round(risk_at_stop, 2),
+            exposure_by_symbol=by_symbol,
+            entries_blocked=blocked,
+        )
 
     def sniper_telemetry(self) -> SniperTelemetry:
         """The sniper's signals funnel: seen / rejected (+why) / executed."""

@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # Capture-replay backtesting: rolling window of recorded launches +
     # price paths (backtest.db lives next to the bot ledger).
     backtest_retention_days: float = 5.0
+    # Fleet risk controls: realized daily loss that pauses NEW entries
+    # until UTC midnight, and the cap on total open virtual USD.
+    bots_daily_loss_limit_usd: float = 100.0
+    bots_max_exposure_usd: float = 250.0
     # Adaptive optimizer: regime-driven parameter tuning with a cooling
     # lock. Thresholds only move to walk-forward VALIDATED values.
     optimizer_enabled: bool = True

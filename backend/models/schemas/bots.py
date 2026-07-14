@@ -193,6 +193,23 @@ class BotPerformance(BaseModel):
     curve: list[EquityPoint] = []
 
 
+class PortfolioRisk(BaseModel):
+    """Fleet-wide risk snapshot: exposure, budgets, worst case, concentration."""
+
+    open_positions: int = 0
+    open_exposure_usd: float = 0.0
+    max_exposure_usd: float = 0.0
+    exposure_used_pct: float = 0.0
+    today_pnl_usd: float = 0.0
+    daily_loss_limit_usd: float = 0.0
+    daily_budget_left_usd: float = 0.0
+    # Sum over open positions of size x stop distance: what today's worst
+    # case adds if every stop fires at its level (gaps can exceed it).
+    risk_at_stop_usd: float = 0.0
+    exposure_by_symbol: dict[str, float] = {}
+    entries_blocked: str | None = None
+
+
 class RejectionRecord(BaseModel):
     """One launch the sniper evaluated and turned down — with the reasons."""
 

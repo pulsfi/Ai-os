@@ -660,3 +660,90 @@ async def test_helius_backstop_unavailable_is_honest_unknown() -> None:
     await sniper.find_entries(set(), 3)
     stub._coins = [pump_coin("Fresh1", 12_000)]
     assert [s.mint for s in await sniper.find_entries(set(), 3)] == ["Fresh1"]
+
+
+# --- fleet risk controls: daily loss limit + max exposure -------------------
+
+
+class _EagerEntry(Strategy):
+    name = "eager2"
+
+    def __init__(self, mint: str = "NewMint") -> None:
+        self._mint = mint
+
+    async def find_entries(self, held_mints, slots):
+        if self._mint in held_mints or slots < 1:
+            return []
+        return [EntrySignal(self._mint, self._mint[:4].upper(), 1.0, "t")]
+
+    async def current_price(self, mint):
+        return 1.0
+
+
+def _risk_config(bot_id: str = "risky") -> BotConfig:
+    return BotConfig(
+        id=bot_id, name="R", strategy="eager2", description="t",
+        interval_s=0.05, usd_per_trade=50.0, max_open_positions=3,
+        take_profit_pct=40.0, stop_loss_pct=18.0, max_hold_s=3600.0,
+    )
+
+
+async def test_daily_loss_limit_pauses_new_entries(tmp_path: Path) -> None:
+    """-$120 realized today with a $100 limit: exits keep managing, but no
+    NEW entries — and the reason is surfaced on the bot status."""
+    ledger = BotLedger(tmp_path / "dl.db")
+    tid = ledger.open_trade("other", "M0", "SY0", 600.0, 1.0)
+    ledger.close_trade(tid, 0.8, "stop-loss")  # -$120 today, fleet-wide
+    runner = BotRunner(
+        _risk_config(), _EagerEntry(), ledger,
+        daily_loss_limit_usd=100.0, max_exposure_usd=None,
+    )
+    await runner.tick()
+    assert ledger.open_trades("risky") == []
+    assert "daily loss limit" in (runner.status().risk_note or "")
+
+
+async def test_max_exposure_blocks_and_frees(tmp_path: Path) -> None:
+    """$240 already open with a $250 cap: a $50 entry would overshoot ->
+    blocked. Once positions close, entries flow again."""
+    ledger = BotLedger(tmp_path / "me.db")
+    held = ledger.open_trade("other", "M1", "SY1", 240.0, 1.0)
+    runner = BotRunner(
+        _risk_config(), _EagerEntry(), ledger,
+        daily_loss_limit_usd=None, max_exposure_usd=250.0,
+    )
+    await runner.tick()
+    assert ledger.open_trades("risky") == []  # $240 + $50 > $250
+    ledger.close_trade(held, 1.0, "flat")  # headroom restored
+    await runner.tick()
+    assert len(ledger.open_trades("risky")) == 1
+
+
+def test_portfolio_risk_math(tmp_path: Path) -> None:
+    """Exposure, risk-at-stop, per-symbol concentration, budgets."""
+    from modules.bots.manager import BotManager
+
+    ledger = BotLedger(tmp_path / "pr.db")
+    ledger.open_trade("risky", "MintA", "AAA", 60.0, 1.0)
+    ledger.open_trade("risky", "MintB", "AAA", 40.0, 1.0)  # same symbol
+    tid = ledger.open_trade("risky", "MintC", "CCC", 100.0, 1.0)
+    ledger.close_trade(tid, 0.9, "stop")  # -$10 realized today
+
+    class _StubRunner:
+        config = _risk_config()
+
+    stub = type("S", (), {})()
+    stub._runners = {"risky": _StubRunner()}
+    stub._ledger = ledger
+    stub._daily_loss_limit = 100.0
+    stub._max_exposure = 250.0
+    risk = BotManager.portfolio_risk(stub)
+    assert risk.open_positions == 2
+    assert risk.open_exposure_usd == 100.0
+    assert risk.exposure_used_pct == 40.0
+    assert risk.today_pnl_usd == -10.0
+    assert risk.daily_budget_left_usd == 90.0
+    # 18% stop on $100 open -> $18 worst case at the stops.
+    assert risk.risk_at_stop_usd == 18.0
+    assert risk.exposure_by_symbol == {"AAA": 100.0}
+    assert risk.entries_blocked is None
