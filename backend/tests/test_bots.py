@@ -419,3 +419,69 @@ def test_config_override_persists_and_reloads(tmp_path: Path, settings: Settings
     assert mgr2.statuses()  # built ok
     sniper = next(b for b in mgr2.statuses() if b.config.id == "sniper")
     assert sniper.config.take_profit_pct == 33.0
+
+
+# --- config merge validation (the 'dict' has no attribute 'enabled' bug) ----
+
+
+def test_merged_config_revalidates_nested_models() -> None:
+    """Overrides come back from JSON as plain dicts. The merge MUST
+    re-validate so nested payloads coerce into their pydantic models —
+    model_copy(update=...) skipped validation and left profit_capture as a
+    raw dict, crashing every trading tick with AttributeError."""
+    import json as _json
+
+    from models.schemas.bots import ProfitCaptureSettings
+    from modules.bots.manager import BotManager
+
+    base = BotConfig(
+        id="m", name="M", strategy="s", description="d", interval_s=1,
+        usd_per_trade=50, max_open_positions=1, take_profit_pct=40,
+        stop_loss_pct=18, max_hold_s=900,
+    )
+    # Exactly what the overrides file holds after a Tune-modal save:
+    overrides = _json.loads(_json.dumps({
+        "profit_capture": {**base.profit_capture.model_dump(), "enabled": True},
+        "min_confidence": 60,
+    }))
+    merged = BotManager.merged_config(base, overrides)
+    assert isinstance(merged.profit_capture, ProfitCaptureSettings)
+    assert merged.profit_capture.enabled is True
+    assert merged.min_confidence == 60
+    assert merged.profit_capture.enabled is not None  # attribute access works
+    assert all(hasattr(t, "gain_pct") for t in merged.profit_capture.tiers)
+
+
+async def test_pipeline_survives_override_roundtrip(tmp_path) -> None:
+    """Full open -> capture tier -> close cycle on a runner whose config
+    went through the JSON override round-trip (the live crash scenario)."""
+    import json as _json
+
+    from modules.bots.ledger import BotLedger
+    from modules.bots.manager import BotManager
+    from modules.bots.runner import BotRunner
+    from tests.test_pro_trading import PricePath
+
+    base = BotConfig(
+        id="rt", name="RT", strategy="pricepath", description="d", interval_s=0.05,
+        usd_per_trade=100, max_open_positions=1, take_profit_pct=999,
+        stop_loss_pct=90, max_hold_s=3600,
+    )
+    overrides = _json.loads(_json.dumps({
+        "profit_capture": {
+            "enabled": True,
+            "tiers": [{"gain_pct": 5, "sell_pct": 10}, {"gain_pct": 25, "sell_pct": 90}],
+        }
+    }))
+    config = BotManager.merged_config(base, overrides)
+    runner = BotRunner(
+        config, PricePath([1.06, 1.30]), BotLedger(tmp_path / "rt.db"),
+        exit_slippage_bps=0, max_gain_pct=1_000_000.0,
+    )
+    await runner.tick()  # opens (Scanner -> Score -> Risk -> Execution)
+    await runner.tick()  # +6%: tier fires through the merged config
+    await runner.tick()  # +30%: top tier closes the remainder
+    assert runner._errors == 0, runner._last_error
+    trades = runner._ledger.trades("rt", 10)
+    assert any("profit-capture" in (t.exit_note or "") for t in trades)
+    assert runner._ledger.open_trades("rt") == []  # opened AND closed cleanly

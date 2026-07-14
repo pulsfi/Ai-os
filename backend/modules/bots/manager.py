@@ -175,9 +175,10 @@ class BotManager:
         self._overrides = self._load_overrides()
         self._runners: dict[str, BotRunner] = {}
         for config in _default_configs(settings):
-            # Apply any saved user tuning on top of the defaults.
+            # Apply any saved user tuning on top of the defaults (validated —
+            # see merged_config for why model_copy would corrupt the config).
             if self._overrides.get(config.id):
-                config = config.model_copy(update=self._overrides[config.id])
+                config = self.merged_config(config, self._overrides[config.id])
             strategy = strategies[config.strategy]
             # The execution threshold lives on the config (tunable,
             # persisted) — push it into scoring strategies at build time.
@@ -187,6 +188,19 @@ class BotManager:
         logger.info("Bot fleet built: %s (PAPER MODE)", ", ".join(self._runners))
 
     # -- config tuning ------------------------------------------------------
+
+    @staticmethod
+    def merged_config(base: BotConfig, changes: dict) -> BotConfig:
+        """Merge user/persisted changes into a config WITH validation.
+
+        Never use model_copy(update=...) for this: it bypasses pydantic
+        validation, so nested payloads from the overrides JSON (e.g.
+        profit_capture) would be injected as raw dicts and every attribute
+        access downstream would raise AttributeError ('dict' object has no
+        attribute 'enabled'). model_validate coerces them back into their
+        models — invalid override data fails loudly here, at the boundary,
+        instead of deep inside a trading tick."""
+        return BotConfig.model_validate({**base.model_dump(), **changes})
 
     def _load_overrides(self) -> dict[str, dict]:
         try:
@@ -208,7 +222,7 @@ class BotManager:
         runner = self._runner(bot_id)  # 404 for unknown bots
         changes = update.model_dump(exclude_none=True)
         if changes:
-            runner.config = runner.config.model_copy(update=changes)
+            runner.config = self.merged_config(runner.config, changes)
             self._overrides[bot_id] = {**self._overrides.get(bot_id, {}), **changes}
             self._persist_overrides()
             # Execution threshold applies LIVE — the strategy gates on it.

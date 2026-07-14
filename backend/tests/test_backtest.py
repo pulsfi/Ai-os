@@ -41,8 +41,10 @@ def test_recorder_samples_throttle_and_candles(tmp_path) -> None:
     with rec._connect() as conn:
         n = conn.execute("SELECT COUNT(*) AS n FROM price_samples").fetchone()["n"]
     assert n == 1
-    # Candles aggregate raw samples into timeframe buckets.
-    t0 = time.time() - 600
+    # Candles aggregate raw samples into timeframe buckets. Align t0 to a
+    # 1m bucket so all four samples (spanning 45s) land in ONE candle
+    # regardless of wall-clock phase.
+    t0 = (int(time.time()) // 60) * 60 - 600
     with rec._connect() as conn:
         for i, p in enumerate([1.0, 1.2, 0.9, 1.1]):
             conn.execute(
